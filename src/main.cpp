@@ -45,6 +45,13 @@ char cfg_nats_host[64];
 int  cfg_nats_port = 4222;
 char cfg_telegram_token[64];
 char cfg_telegram_chat_id[16];
+char cfg_qq_http_host[64];
+int  cfg_qq_http_port = 8080;
+char cfg_qq_app_id[32];
+char cfg_qq_app_secret[64];
+char cfg_qq_access_token[128];  /* Runtime access token */
+unsigned long cfg_qq_token_expires = 0;
+int cfg_qq_cooldown = 3;  /* seconds, 0 = disabled */
 char cfg_system_prompt[4096];
 char cfg_timezone[64];
 int cfg_telegram_cooldown = 3;  /* seconds, 0 = disabled */
@@ -61,6 +68,13 @@ static void configDefaults() {
     cfg_nats_port = 4222;
     cfg_telegram_token[0] = '\0';
     cfg_telegram_chat_id[0] = '\0';
+    cfg_qq_http_host[0] = '\0';
+    cfg_qq_http_port = 8080;
+    cfg_qq_app_id[0] = '\0';
+    cfg_qq_app_secret[0] = '\0';
+    cfg_qq_access_token[0] = '\0';
+    cfg_qq_token_expires = 0;
+    cfg_qq_cooldown = 3;
     strncpy(cfg_timezone, "UTC0", sizeof(cfg_timezone));
     strncpy(cfg_system_prompt,
         "You are WireClaw, a helpful AI assistant running on an ESP32 microcontroller. "
@@ -178,6 +192,17 @@ static bool loadConfig() {
         char cd_buf[8];
         if (jsonGetString(json_buf, "telegram_cooldown", cd_buf, sizeof(cd_buf))) {
             cfg_telegram_cooldown = atoi(cd_buf);
+        }
+        jsonGetString(json_buf, "qq_http_host", cfg_qq_http_host, sizeof(cfg_qq_http_host));
+        char qq_port_buf[8];
+        if (jsonGetString(json_buf, "qq_http_port", qq_port_buf, sizeof(qq_port_buf))) {
+            cfg_qq_http_port = atoi(qq_port_buf);
+        }
+        jsonGetString(json_buf, "qq_app_id", cfg_qq_app_id, sizeof(cfg_qq_app_id));
+        jsonGetString(json_buf, "qq_app_secret", cfg_qq_app_secret, sizeof(cfg_qq_app_secret));
+        char qq_cd_buf[8];
+        if (jsonGetString(json_buf, "qq_cooldown", qq_cd_buf, sizeof(qq_cd_buf))) {
+            cfg_qq_cooldown = atoi(qq_cd_buf);
         }
         jsonGetString(json_buf, "timezone", cfg_timezone, sizeof(cfg_timezone));
     } else {
@@ -618,6 +643,7 @@ static void onNatsChat(nats_client_t *client, const nats_msg_t *msg,
 
 /* Forward declaration (defined in Telegram section, needed by handleCommand) */
 extern bool g_telegram_enabled;
+extern bool g_qq_enabled;
 
 /* Shared command response buffer (NATS + Telegram + Serial, single-threaded so safe) */
 static char cmdResponseBuf[1024];
@@ -637,6 +663,7 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
             "Debug: %s\n"
             "NATS: %s\n"
             "Telegram: %s\n"
+            "QQ: %s\n"
             "Uptime: %lus",
             WiFi.status() == WL_CONNECTED ? "connected" : "disconnected",
             WiFi.localIP().toString().c_str(),
@@ -647,6 +674,7 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
                 ? (g_nats_connected ? "connected" : "disconnected")
                 : "disabled",
             g_telegram_enabled ? "enabled" : "disabled",
+            g_qq_enabled ? "enabled" : "disabled",
             millis() / 1000);
         return true;
     }
@@ -1545,6 +1573,508 @@ static void tgYield() {
 }
 
 /*============================================================================
+ * QQ Bot (via QQ Official Bot API)
+ * Uses HTTPS API for sending, WebSocket for receiving messages
+ *============================================================================*/
+
+static WiFiClientSecure qqClient;
+bool g_qq_enabled = false;
+static unsigned long qqLastPoll = 0;
+static unsigned long qqLastTokenRefresh = 0;
+static bool qqConnected = false;
+
+/* QQ API endpoints */
+static const char *QQ_API_HOST = "api.q.qq.com";
+static const int   QQ_API_PORT = 443;
+static const char *QQ_WS_HOST = "api.q.qq.com";
+static const int   QQ_WS_PORT = 8080;  /* Or 443 for wss */
+static char qqGatewayUrl[256] = "";
+static char qqWebSocketUrl[256] = "";
+
+/* WebSocket state */
+enum QqWsState { QQ_WS_DISCONNECTED, QQ_WS_CONNECTING, QQ_WS_CONNECTED, QQ_WS_WAITING };
+static QqWsState qqWsState = QQ_WS_DISCONNECTED;
+static unsigned long qqWsConnectStart = 0;
+static unsigned long qqLastHeartbeat = 0;
+#define QQ_WS_RECONNECT_DELAY 30000  /* 30s */
+#define QQ_HEARTBEAT_INTERVAL 30000  /* 30s */
+#define QQ_WS_TIMEOUT 60000         /* 60s */
+
+static char qqWsRxBuf[1024];
+static int qqWsRxLen = 0;
+
+/**
+ * Get Access Token from QQ API
+ * POST https://api.q.qq.com/api/getToken?grant_type=client_credential&appid=APPID&secret=APPSECRET
+ */
+static bool qqGetAccessToken() {
+    unsigned long now = millis();
+    
+    /* Check if token is still valid */
+    if (cfg_qq_access_token[0] != '\0' && now < cfg_qq_token_expires) {
+        return true;
+    }
+
+    Serial.printf("[QQ] Refreshing access token...\n");
+
+    qqClient.stop();
+    if (!qqClient.connect(QQ_API_HOST, QQ_API_PORT)) {
+        Serial.printf("[QQ] Failed to connect to API\n");
+        return false;
+    }
+
+    char path[256];
+    snprintf(path, sizeof(path),
+        "GET /api/getToken?grant_type=client_credential&appid=%s&secret=%s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Connection: close\r\n\r\n",
+        cfg_qq_app_id, cfg_qq_app_secret, QQ_API_HOST);
+
+    qqClient.print(path);
+
+    /* Read response */
+    unsigned long start = millis();
+    static char resp[512];
+    int len = 0;
+    while (qqClient.connected() && (millis() - start) < 10000) {
+        if (qqClient.available()) {
+            resp[len++] = qqClient.read();
+            if (len >= sizeof(resp) - 1) break;
+        }
+    }
+    qqClient.stop();
+    resp[len] = '\0';
+
+    /* Parse JSON response */
+    /* Expected: {"access_token":"xxx","expires_in":86400} */
+    const char *token = strstr(resp, "\"access_token\":\"");
+    if (!token) {
+        Serial.printf("[QQ] Failed to parse token response\n");
+        return false;
+    }
+    token += 16;
+    
+    int i = 0;
+    while (*token && *token != '"' && i < 127) {
+        cfg_qq_access_token[i++] = *token++;
+    }
+    cfg_qq_access_token[i] = '\0';
+
+    /* Parse expires_in */
+    const char *expires = strstr(resp, "\"expires_in\":");
+    if (expires) {
+        cfg_qq_token_expires = now + (atoi(expires + 12) - 300) * 1000UL;  /* Buffer 5 min */
+    } else {
+        cfg_qq_token_expires = now + 24 * 3600 * 1000UL;  /* Default 24h */
+    }
+
+    qqLastTokenRefresh = now;
+    Serial.printf("[QQ] Access token obtained: %.10s...\n", cfg_qq_access_token);
+    return true;
+}
+
+/**
+ * Get WebSocket Gateway URL
+ */
+static bool qqGetGateway() {
+    if (!qqGetAccessToken()) return false;
+
+    qqClient.stop();
+    if (!qqClient.connect(QQ_API_HOST, QQ_API_PORT)) {
+        return false;
+    }
+
+    char path[384];
+    snprintf(path, sizeof(path),
+        "GET /api/gateway?access_token=%s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Connection: close\r\n\r\n",
+        cfg_qq_access_token, QQ_API_HOST);
+
+    qqClient.print(path);
+
+    /* Read response */
+    static char resp[512];
+    int len = 0;
+    unsigned long start = millis();
+    while (qqClient.connected() && (millis() - start) < 10000) {
+        if (qqClient.available()) {
+            resp[len++] = qqClient.read();
+            if (len >= sizeof(resp) - 1) break;
+        }
+    }
+    qqClient.stop();
+    resp[len] = '\0';
+
+    /* Parse URL from response: {"url":"wss://.../gateway"} */
+    const char *url = strstr(resp, "\"url\":\"");
+    if (!url) return false;
+    url += 7;
+
+    int i = 0;
+    while (*url && *url != '"' && i < 255) {
+        qqGatewayUrl[i++] = *url++;
+    }
+    qqGatewayUrl[i] = '\0';
+
+    Serial.printf("[QQ] Gateway: %s\n", qqGatewayUrl);
+    return true;
+}
+
+/**
+ * Send message via QQ API
+ * POST https://api.q.qq.com/api/CHANNEL_ID/messages
+ */
+static bool qqSendMessage(const char *channel_id, const char *content) {
+    if (!qqGetAccessToken()) return false;
+
+    qqClient.stop();
+    if (!qqClient.connect(QQ_API_HOST, QQ_API_PORT)) {
+        Serial.printf("[QQ] Send: connect failed\n");
+        return false;
+    }
+
+    /* Build JSON body */
+    static char body[512];
+    static char escaped[512];
+    
+    /* Simple JSON escape */
+    int j = 0;
+    for (int i = 0; content[i] && j < 500; i++) {
+        char c = content[i];
+        if (c == '"' || c == '\\') {
+            escaped[j++] = '\\';
+            escaped[j++] = c;
+        } else if (c == '\n') {
+            escaped[j++] = '\\';
+            escaped[j++] = 'n';
+        } else {
+            escaped[j++] = c;
+        }
+    }
+    escaped[j] = '\0';
+
+    snprintf(body, sizeof(body),
+        "{\"content\":\"%s\"}", escaped);
+
+    char path[384];
+    snprintf(path, sizeof(path),
+        "POST /api/v1/channels/%s/messages?access_token=%s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %d\r\n"
+        "Connection: close\r\n\r\n%s",
+        channel_id, cfg_qq_access_token, QQ_API_HOST, strlen(body), body);
+
+    qqClient.print(path);
+
+    /* Read response */
+    static char resp[256];
+    int len = 0;
+    unsigned long start = millis();
+    while (qqClient.connected() && (millis() - start) < 10000) {
+        if (qqClient.available()) {
+            resp[len++] = qqClient.read();
+            if (len >= sizeof(resp) - 1) break;
+        }
+    }
+    qqClient.stop();
+    resp[len] = '\0';
+
+    /* Check for success */
+    if (strstr(resp, "\"id\":") || strstr(resp, "\"msg_id\":")) {
+        return true;
+    }
+
+    Serial.printf("[QQ] Send failed: %.100s\n", resp);
+    return false;
+}
+
+/**
+ * Parse WebSocket message from QQ Gateway
+ */
+static void qqParseWsMessage(const char *data, int len) {
+    /* Simple parsing - look for message events */
+    const char *evt = strstr(data, "\"t\":\"");
+    if (!evt) return;
+    evt += 5;
+
+    /* Check for message types */
+    if (strncmp(evt, "MESSAGE", 8) == 0) {
+        /* Extract message content */
+        const char *content = strstr(data, "\"content\":\"");
+        if (!content) return;
+        content += 11;
+
+        static char msgBuf[256];
+        int i = 0;
+        while (*content && *content != '"' && i < 255) {
+            if (*content == '\\' && *(content + 1)) {
+                content++;
+                if (*content == 'n') msgBuf[i++] = '\n';
+                else msgBuf[i++] = *content;
+            } else {
+                msgBuf[i++] = *content;
+            }
+            content++;
+        }
+        msgBuf[i] = '\0';
+
+        if (i == 0) return;
+
+        /* Extract channel_id for reply */
+        const char *chan = strstr(data, "\"channel_id\":\"");
+        static char channelId[32] = "";
+        if (chan) {
+            chan += 14;
+            int ci = 0;
+            while (*chan && *chan != '"' && ci < 31) {
+                channelId[ci++] = *chan++;
+            }
+            channelId[ci] = '\0';
+        }
+
+        Serial.printf("\n[QQ] Message: %s\n", msgBuf);
+
+        /* Check for commands */
+        if (msgBuf[0] == '/') {
+            const char *cmd = msgBuf + 1;
+            static char cmdCopy[64];
+            strncpy(cmdCopy, cmd, sizeof(cmdCopy) - 1);
+            cmdCopy[sizeof(cmdCopy) - 1] = '\0';
+            char *space = strchr(cmdCopy, ' ');
+            if (space) *space = '\0';
+
+            if (handleCommand(cmdCopy, cmdResponseBuf, sizeof(cmdResponseBuf))) {
+                Serial.printf("[QQ] cmd: /%s -> %s\n", cmdCopy, cmdResponseBuf);
+                if (channelId[0]) {
+                    qqSendMessage(channelId, cmdResponseBuf);
+                }
+            } else {
+                snprintf(cmdResponseBuf, sizeof(cmdResponseBuf),
+                    "Unknown command: /%s", cmdCopy);
+                if (channelId[0]) {
+                    qqSendMessage(channelId, cmdResponseBuf);
+                }
+            }
+            return;
+        }
+
+        /* Run chat */
+        tgYield();
+        const char *response = chatWithLLM(msgBuf);
+
+        if (response && channelId[0]) {
+            qqSendMessage(channelId, response);
+        }
+    }
+}
+
+/**
+ * WebSocket frame receive (simplified)
+ */
+static void qqWsProcess() {
+    if (!qqClient.available()) return;
+
+    /* Read available data */
+    while (qqClient.available() && qqWsRxLen < sizeof(qqWsRxBuf) - 1) {
+        qqWsRxBuf[qqWsRxLen++] = qqClient.read();
+    }
+    qqWsRxBuf[qqWsRxLen] = '\0';
+
+    /* Look for message frame (text opcode = 0x81) */
+    for (int i = 0; i < qqWsRxLen - 1; i++) {
+        if ((uint8_t)qqWsRxBuf[i] == 0x81) {
+            /* Text frame */
+            int payload_len = qqWsRxBuf[i + 1] & 0x7F;
+            int offset = 2;
+            
+            /* Extended payload length */
+            if (payload_len == 126) {
+                payload_len = ((uint8_t)qqWsRxBuf[i + 2] << 8) | (uint8_t)qqWsRxBuf[i + 3];
+                offset = 4;
+            } else if (payload_len == 127) {
+                offset = 10;  /* Skip 8-byte length */
+            }
+
+            if (i + offset + payload_len <= qqWsRxLen) {
+                static char msg[512];
+                int msg_len = payload_len < 511 ? payload_len : 511;
+                memcpy(msg, &qqWsRxBuf[i + offset], msg_len);
+                msg[msg_len] = '\0';
+
+                /* Shift buffer */
+                memmove(qqWsRxBuf, &qqWsRxBuf[i + offset + payload_len],
+                        qqWsRxLen - i - offset - payload_len);
+                qqWsRxLen -= i + offset + payload_len;
+
+                qqParseWsMessage(msg, msg_len);
+                i = -1;  /* Restart search */
+            }
+        }
+    }
+}
+
+/**
+ * Connect to QQ WebSocket Gateway
+ */
+static bool qqWsConnect() {
+    if (qqGatewayUrl[0] == '\0') {
+        if (!qqGetGateway()) return false;
+    }
+
+    Serial.printf("[QQ] Connecting to WebSocket...\n");
+
+    qqClient.stop();
+    if (!qqClient.connect(QQ_WS_HOST, QQ_WS_PORT)) {
+        Serial.printf("[QQ] WS connect failed\n");
+        return false;
+    }
+
+    /* Build WebSocket handshake request */
+    static char wsReq[512];
+    snprintf(wsReq, sizeof(wsReq),
+        "GET %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: QQBotClient1234567890ab\r\n"
+        "\r\n",
+        qqGatewayUrl[0] == 's' ? qqGatewayUrl + 8 : qqGatewayUrl,
+        QQ_WS_HOST);
+
+    qqClient.print(wsReq);
+
+    /* Wait for handshake response */
+    unsigned long start = millis();
+    static char resp[256];
+    int len = 0;
+    while (qqClient.connected() && (millis() - start) < 10000) {
+        if (qqClient.available()) {
+            resp[len++] = qqClient.read();
+            if (len > 4 && strstr(resp, "\r\n\r\n")) break;
+        }
+    }
+    resp[len] = '\0';
+
+    if (!strstr(resp, "101")) {
+        Serial.printf("[QQ] WS handshake failed\n");
+        qqClient.stop();
+        return false;
+    }
+
+    /* Send IDENTIFY with token */
+    static char identify[256];
+    snprintf(identify, sizeof(identify),
+        "\x82\x7F"  /* Text frame, 127 bytes */
+        "{\"op\":2,\"d\":{\"token\":\"%s\",\"intents\":513}}",  /* 513 = GUILD_MESSAGES + DIRECT_MESSAGES */
+        cfg_qq_access_token);
+
+    /* Simplified: just send as regular text */
+    snprintf(identify, sizeof(identify),
+        "{\"op\":2,\"d\":{\"token\":\"%s\",\"intents\":513}}",
+        cfg_qq_access_token);
+    
+    /* Send as WebSocket text frame */
+    qqClient.write((uint8_t)0x81);
+    int idLen = strlen(identify);
+    if (idLen < 126) {
+        qqClient.write((uint8_t)idLen);
+    } else {
+        qqClient.write((uint8_t)126);
+        qqClient.write((uint8_t)(idLen >> 8));
+        qqClient.write((uint8_t)(idLen & 0xFF));
+    }
+    qqClient.print(identify);
+
+    qqWsState = QQ_WS_CONNECTED;
+    qqLastHeartbeat = millis();
+    Serial.printf("[QQ] WebSocket connected!\n");
+
+    return true;
+}
+
+/**
+ * QQ WebSocket tick - call from loop
+ */
+static void qqTick() {
+    unsigned long now = millis();
+
+    /* Check if we should reconnect */
+    if (qqWsState == QQ_WS_DISCONNECTED) {
+        if (now - qqLastPoll < QQ_WS_RECONNECT_DELAY) return;
+        if (!qqGetAccessToken()) return;
+        
+        qqWsConnect();
+        qqLastPoll = now;
+        return;
+    }
+
+    /* Send heartbeat */
+    if (qqWsState == QQ_WS_CONNECTED && now - qqLastHeartbeat > QQ_HEARTBEAT_INTERVAL) {
+        qqClient.write("\x81\x01\x09");  /* Opcode 9 = PING */
+        qqLastHeartbeat = now;
+    }
+
+    /* Process incoming data */
+    if (qqWsState == QQ_WS_CONNECTED && qqClient.available()) {
+        qqWsProcess();
+    }
+
+    /* Check connection status */
+    if (!qqClient.connected() && qqWsState == QQ_WS_CONNECTED) {
+        Serial.printf("[QQ] WebSocket disconnected\n");
+        qqWsState = QQ_WS_DISCONNECTED;
+        qqLastPoll = now;
+    }
+}
+
+/**
+ * Get bot info - verify connection
+ */
+static bool qqGetBotInfo() {
+    if (!qqGetAccessToken()) return false;
+
+    qqClient.stop();
+    if (!qqClient.connect(QQ_API_HOST, QQ_API_PORT)) {
+        return false;
+    }
+
+    char path[256];
+    snprintf(path, sizeof(path),
+        "GET /api/v1/users/me?access_token=%s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Connection: close\r\n\r\n",
+        cfg_qq_access_token, QQ_API_HOST);
+
+    qqClient.print(path);
+
+    static char resp[256];
+    int len = 0;
+    unsigned long start = millis();
+    while (qqClient.connected() && (millis() - start) < 10000) {
+        if (qqClient.available()) {
+            resp[len++] = qqClient.read();
+            if (len >= sizeof(resp) - 1) break;
+        }
+    }
+    qqClient.stop();
+    resp[len] = '\0';
+
+    return strstr(resp, "\"id\":") != nullptr;
+}
+
+/* Release QQ connection */
+static void qqYield() {
+    if (qqWsState == QQ_WS_CONNECTED) {
+        qqClient.stop();
+        qqWsState = QQ_WS_DISCONNECTED;
+        qqLastPoll = millis();
+    }
+}
+
+/*============================================================================
  * Serial Commands
  *============================================================================*/
 
@@ -1559,6 +2089,7 @@ void handleSerialCommand(const char *input) {
         Serial.printf("NATS:      %s:%d (%s)\n", cfg_nats_host, cfg_nats_port,
                       g_nats_enabled ? "enabled" : "disabled");
         Serial.printf("Telegram:  %s\n", g_telegram_enabled ? "enabled" : "disabled");
+        Serial.printf("QQ:        %s\n", g_qq_enabled ? "enabled" : "disabled");
         Serial.printf("Prompt:    %d chars\n", (int)strlen(cfg_system_prompt));
         Serial.printf("> ");
         return;
@@ -1689,6 +2220,26 @@ void setup() {
         Serial.printf("Telegram: disabled (no telegram_token/telegram_chat_id in config)\n");
     }
 
+    /* QQ Bot via Official API (optional) */
+    if (cfg_qq_app_id[0] != '\0' && cfg_qq_app_secret[0] != '\0') {
+        g_qq_enabled = true;
+        qqClient.setInsecure();
+        qqClient.setTimeout(30);
+        qqLastPoll = millis();
+        Serial.printf("QQ: enabled (AppID: %s)\n", cfg_qq_app_id);
+        /* Get access token and verify connection */
+        if (qqGetAccessToken()) {
+            Serial.printf("QQ: access token obtained\n");
+            if (qqGetBotInfo()) {
+                Serial.printf("QQ: bot info verified\n");
+            }
+            /* Try to connect WebSocket for receiving messages */
+            qqTick();
+        }
+    } else {
+        Serial.printf("QQ: disabled (no qq_app_id/qq_app_secret in config)\n");
+    }
+
     /* Web config portal (HTTP on port 80 + mDNS) */
     webConfigSetup();
 
@@ -1750,6 +2301,11 @@ void loop() {
     /* Poll Telegram */
     if (g_telegram_enabled) {
         telegramTick();
+    }
+
+    /* Poll QQ via go-cqhttp */
+    if (g_qq_enabled) {
+        qqTick();
     }
 
     /* Keep sensor EMA values warm (every 10s) */

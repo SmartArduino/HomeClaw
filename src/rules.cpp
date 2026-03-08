@@ -16,8 +16,11 @@ extern NatsClient natsClient;
 extern bool g_nats_connected;
 extern bool g_debug;
 extern bool g_telegram_enabled;
+extern bool g_qq_enabled;
 extern int cfg_telegram_cooldown;
+extern int cfg_qq_cooldown;
 extern bool tgSendMessage(const char *text);
+extern bool qqSendMessage(const char *channel_id, const char *content);
 
 /* NATS events subject - built from device name in main.cpp */
 extern char natsSubjectEvents[];
@@ -60,9 +63,22 @@ const char *actionTypeName(ActionType act) {
         case ACT_NATS_PUBLISH: return "nats_publish";
         case ACT_ACTUATOR:     return "actuator";
         case ACT_TELEGRAM:     return "telegram";
+        case ACT_QQ:          return "qq";
         case ACT_SERIAL_SEND:  return "serial_send";
         default:               return "?";
     }
+}
+
+static ActionType actionFromString(const char *s) {
+    if (strcmp(s, "gpio_write") == 0)   return ACT_GPIO_WRITE;
+    if (strcmp(s, "led_set") == 0)      return ACT_LED_SET;
+    if (strcmp(s, "nats_publish") == 0) return ACT_NATS_PUBLISH;
+    if (strcmp(s, "actuator") == 0)     return ACT_ACTUATOR;
+    if (strcmp(s, "telegram") == 0)     return ACT_TELEGRAM;
+    if (strcmp(s, "qq") == 0)            return ACT_QQ;
+    if (strcmp(s, "serial_send") == 0)  return ACT_SERIAL_SEND;
+    return ACT_GPIO_WRITE;
+}
 }
 
 static ActionType actionFromString(const char *s) {
@@ -335,9 +351,29 @@ static void executeAction(Rule *r, bool is_on) {
             if (msg[0]) {
                 static char interpolated[128];
                 interpolateMessage(msg, r, interpolated, sizeof(interpolated));
-                tgSendMessage(interpolated);
+            tgSendMessage(interpolated);
                 r->last_telegram_ms = now;
                 if (g_debug) Serial.printf("[Rule] %s: Telegram: %s\n", r->id, interpolated);
+            }
+            break;
+        }
+        case ACT_QQ: {
+            if (!g_qq_enabled) break;
+            uint32_t now = millis();
+            uint32_t cooldown_ms = (uint32_t)cfg_qq_cooldown * 1000;
+            if (cooldown_ms > 0 && now - r->last_qq_ms < cooldown_ms) {
+                if (g_debug) Serial.printf("[Rule] %s: QQ cooldown, skipping\n", r->id);
+                break;
+            }
+            const char *msg = is_on ? r->on_nats_pay : r->off_nats_pay;
+            if (msg[0]) {
+                static char interpolated[128];
+                interpolateMessage(msg, r, interpolated, sizeof(interpolated));
+                /* Note: For rules, we need a configured channel_id. 
+                 * This requires additional config for rule-based QQ messages.
+                 * For now, this is primarily for interactive chat via the bot. */
+                r->last_qq_ms = now;
+                if (g_debug) Serial.printf("[Rule] %s: QQ (rule action requires channel_id config)\n", r->id);
             }
             break;
         }

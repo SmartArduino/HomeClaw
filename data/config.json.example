@@ -10,5 +10,8 @@
   "telegram_token": "",
   "telegram_chat_id": "",
   "telegram_cooldown": "15",
+  "qq_app_id": "",
+  "qq_app_secret": "",
+  "qq_cooldown": "15",
   "timezone": "UTC0"
 }

@@ -21,7 +21,7 @@
 #define MAX_CHAIN_DEPTH     8
 
 enum ConditionOp { COND_GT, COND_LT, COND_EQ, COND_NEQ, COND_CHANGE, COND_ALWAYS, COND_CHAINED };
-enum ActionType  { ACT_GPIO_WRITE, ACT_LED_SET, ACT_NATS_PUBLISH, ACT_ACTUATOR, ACT_TELEGRAM, ACT_SERIAL_SEND };
+enum ActionType  { ACT_GPIO_WRITE, ACT_LED_SET, ACT_NATS_PUBLISH, ACT_ACTUATOR, ACT_TELEGRAM, ACT_QQ, ACT_SERIAL_SEND };
 
 struct Rule {
     char id[RULE_ID_LEN];              /* "rule_01" etc. */
@@ -58,6 +58,7 @@ struct Rule {
     uint32_t last_eval;                 /* runtime only, not persisted */
     uint32_t last_triggered;            /* millis() of last action fire, persisted */
     uint32_t last_telegram_ms;          /* runtime only, cooldown tracking */
+    uint32_t last_qq_ms;               /* runtime only, cooldown tracking */
 
     /* Chain (optional: trigger another rule after action fires) */
     char chain_id[RULE_ID_LEN];         /* ON-chain target rule ID, empty = no chain */
