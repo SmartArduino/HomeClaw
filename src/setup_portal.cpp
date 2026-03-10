@@ -32,10 +32,12 @@ body{font-family:'Courier New',monospace;background:#0a0a0a;color:#e0e0e0;paddin
 h1{color:#00d4aa;font-size:1.5em;margin-bottom:4px}
 .sub{color:#666;font-size:0.85em;margin-bottom:20px}
 label{display:block;margin:12px 0 4px;color:#00d4aa;font-size:0.9em}
-input[type=text],input[type=password]{width:100%;padding:10px;background:#1a1a1a;border:1px solid #333;color:#fff;font-family:inherit;font-size:0.95em;border-radius:4px}
+input[type=text],input[type=password],input[type=number],select{width:100%;padding:10px;background:#1a1a1a;border:1px solid #333;color:#fff;font-family:inherit;font-size:0.95em;border-radius:4px}
 input:focus{outline:none;border-color:#00d4aa}
 .opt{color:#555;font-size:0.8em}
 .sep{border-top:1px solid #222;margin:16px 0}
+.platform-group{display:none}
+.platform-group.active{display:block}
 button{width:100%;padding:12px;margin-top:20px;background:#00d4aa;color:#0a0a0a;border:none;font-family:inherit;font-size:1em;font-weight:bold;cursor:pointer;border-radius:4px}
 button:hover{background:#00b894}
 </style></head><body>
@@ -64,16 +66,38 @@ button:hover{background:#00b894}
 <label>NATS Port</label>
 <input type="text" name="nats_port" value="4222">
 <div class="sep"></div>
+<label>Message Platform</label>
+<select name="message_platform" id="message_platform" onchange="togglePlatformFields()">
+<option value="telegram">Telegram</option>
+<option value="qq">QQ</option>
+</select>
+<div id="platform_telegram" class="platform-group active">
 <label>Telegram Bot Token</label>
 <input type="text" name="telegram_token">
 <label>Telegram Chat ID</label>
 <input type="text" name="telegram_chat_id">
+</div>
+<div id="platform_qq" class="platform-group">
+<label>QQ App ID</label>
+<input type="text" name="qq_app_id">
+<label>QQ App Secret</label>
+<input type="password" name="qq_app_secret">
+<label>QQ Cooldown (seconds)</label>
+<input type="number" name="qq_cooldown" value="15" min="0">
+</div>
 <div class="sep"></div>
 <label>Timezone</label>
 <input type="text" name="timezone" value="UTC0">
 <p class="opt">POSIX TZ string (e.g. CET-1CEST,M3.5.0,M10.5.0/3)</p>
 <button type="submit">Save &amp; Reboot</button>
-</form></body></html>)rawhtml";
+</form><script>
+function togglePlatformFields(){
+var platform=document.getElementById('message_platform').value;
+document.getElementById('platform_telegram').className='platform-group'+(platform==='telegram'?' active':'');
+document.getElementById('platform_qq').className='platform-group'+(platform==='qq'?' active':'');
+}
+togglePlatformFields();
+</script></body></html>)rawhtml";
 
 static const char SAVED_HTML[] PROGMEM = R"rawhtml(<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -165,6 +189,7 @@ static bool saveConfig(const char *body) {
     }
 
     char val[128];
+    char messagePlatform[16];
 
     f.print("{\n");
 
@@ -195,13 +220,37 @@ static bool saveConfig(const char *body) {
     if (val[0] == '\0') strncpy(val, "4222", sizeof(val));
     f.print("  \"nats_port\": "); writeJsonEscaped(f, val); f.print(",\n");
 
-    formGetField(body, "telegram_token", val, sizeof(val));
-    f.print("  \"telegram_token\": "); writeJsonEscaped(f, val); f.print(",\n");
+    formGetField(body, "message_platform", messagePlatform, sizeof(messagePlatform));
+    if (strcmp(messagePlatform, "qq") != 0) strncpy(messagePlatform, "telegram", sizeof(messagePlatform));
+    messagePlatform[sizeof(messagePlatform) - 1] = '\0';
+    f.print("  \"message_platform\": "); writeJsonEscaped(f, messagePlatform); f.print(",\n");
 
-    formGetField(body, "telegram_chat_id", val, sizeof(val));
-    f.print("  \"telegram_chat_id\": "); writeJsonEscaped(f, val); f.print(",\n");
+    if (strcmp(messagePlatform, "telegram") == 0) {
+        formGetField(body, "telegram_token", val, sizeof(val));
+        f.print("  \"telegram_token\": "); writeJsonEscaped(f, val); f.print(",\n");
 
-    f.print("  \"telegram_cooldown\": \"15\",\n");
+        formGetField(body, "telegram_chat_id", val, sizeof(val));
+        f.print("  \"telegram_chat_id\": "); writeJsonEscaped(f, val); f.print(",\n");
+
+        f.print("  \"telegram_cooldown\": \"15\",\n");
+        f.print("  \"qq_app_id\": \"\",\n");
+        f.print("  \"qq_app_secret\": \"\",\n");
+        f.print("  \"qq_cooldown\": \"15\",\n");
+    } else {
+        f.print("  \"telegram_token\": \"\",\n");
+        f.print("  \"telegram_chat_id\": \"\",\n");
+        f.print("  \"telegram_cooldown\": \"15\",\n");
+
+        formGetField(body, "qq_app_id", val, sizeof(val));
+        f.print("  \"qq_app_id\": "); writeJsonEscaped(f, val); f.print(",\n");
+
+        formGetField(body, "qq_app_secret", val, sizeof(val));
+        f.print("  \"qq_app_secret\": "); writeJsonEscaped(f, val); f.print(",\n");
+
+        formGetField(body, "qq_cooldown", val, sizeof(val));
+        if (val[0] == '\0') strncpy(val, "15", sizeof(val));
+        f.print("  \"qq_cooldown\": "); writeJsonEscaped(f, val); f.print(",\n");
+    }
 
     formGetField(body, "timezone", val, sizeof(val));
     if (val[0] == '\0') strncpy(val, "UTC0", sizeof(val));

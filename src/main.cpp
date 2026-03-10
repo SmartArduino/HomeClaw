@@ -30,9 +30,9 @@
  * Configuration
  *============================================================================*/
 
-#define LED_BRIGHTNESS   20
-#define SERIAL_BUF_SIZE  512
-#define MAX_HISTORY      4  /* Keep last N user+assistant turns (pairs) */
+#define LED_BRIGHTNESS 20
+#define SERIAL_BUF_SIZE 512
+#define MAX_HISTORY 4 /* Keep last N user+assistant turns (pairs) */
 
 /* Runtime config - loaded from LittleFS, falls back to secrets.h */
 char cfg_wifi_ssid[64];
@@ -42,44 +42,53 @@ char cfg_model[64];
 char cfg_device_name[32];
 char cfg_api_base_url[128];
 char cfg_nats_host[64];
-int  cfg_nats_port = 4222;
+int cfg_nats_port = 4222;
 char cfg_telegram_token[64];
 char cfg_telegram_chat_id[16];
 char cfg_qq_http_host[64];
-int  cfg_qq_http_port = 8080;
+int cfg_qq_http_port = 8080;
 char cfg_qq_app_id[32];
 char cfg_qq_app_secret[64];
-char cfg_qq_access_token[128];  /* Runtime access token */
+char cfg_qq_access_token[128]; /* Runtime access token */
 unsigned long cfg_qq_token_expires = 0;
-int cfg_qq_cooldown = 3;  /* seconds, 0 = disabled */
+int cfg_qq_cooldown = 3; /* seconds, 0 = disabled */
 char cfg_system_prompt[4096];
 char cfg_timezone[64];
-int cfg_telegram_cooldown = 3;  /* seconds, 0 = disabled */
+int cfg_telegram_cooldown = 3; /* seconds, 0 = disabled */
 
-/* Placeholder defaults - overridden by LittleFS config.json */
+/**
+ * 用编译期回退值初始化内存中的配置。
+ *
+ * 该函数会在读取 LittleFS 之前执行。之后如果 `/config.json`
+ * 中成功加载到对应字段，就会覆盖这里的默认值。
+ */
 static void configDefaults() {
     cfg_wifi_ssid[0] = '\0';
     cfg_wifi_pass[0] = '\0';
-    cfg_api_key[0] = '\0';
-    strncpy(cfg_model, "google/gemini-2.5-flash", sizeof(cfg_model));
+    // cfg_api_key[0] = '\0';
+    strncpy(cfg_api_key, "sk-cp-yipCduEuaQq3vCRoF0e-JPMNndZdsZee3h8w0mJSvVABw6lN6bfLWH-LiqAo48lV9sxTbPrpvcro3yU-U2_Twgad0qnH9DuFjirqEBdlqbg9wHVRvZTVsaA", sizeof(cfg_api_key));
+    strncpy(cfg_model, "MiniMax-M2.5", sizeof(cfg_model));
     strncpy(cfg_device_name, "wireclaw", sizeof(cfg_device_name));
-    cfg_api_base_url[0] = '\0';
+    // cfg_api_base_url[0] = '\0';
+    strncpy(cfg_api_base_url, "https://api.minimaxi.com/v1/chat/completions", sizeof(cfg_api_base_url));
     cfg_nats_host[0] = '\0';
     cfg_nats_port = 4222;
     cfg_telegram_token[0] = '\0';
     cfg_telegram_chat_id[0] = '\0';
     cfg_qq_http_host[0] = '\0';
     cfg_qq_http_port = 8080;
-    cfg_qq_app_id[0] = '\0';
-    cfg_qq_app_secret[0] = '\0';
+    // cfg_qq_app_id[0] = '\0';
+    strncpy(cfg_qq_app_id, "1903272956", sizeof(cfg_qq_app_id));
+    // cfg_qq_app_secret[0] = '\0';
+    strncpy(cfg_qq_app_secret, "6FOYis2CMWhs3EPamyAMYkxANan0DRft", sizeof(cfg_qq_app_secret));
     cfg_qq_access_token[0] = '\0';
     cfg_qq_token_expires = 0;
     cfg_qq_cooldown = 3;
     strncpy(cfg_timezone, "UTC0", sizeof(cfg_timezone));
     strncpy(cfg_system_prompt,
-        "You are WireClaw, a helpful AI assistant running on an ESP32 microcontroller. "
-        "Be concise. Keep responses under 200 words unless asked for detail.",
-        sizeof(cfg_system_prompt));
+            "You are WireClaw, a helpful AI assistant running on an ESP32 microcontroller. "
+            "Be concise. Keep responses under 200 words unless asked for detail.",
+            sizeof(cfg_system_prompt));
 }
 
 /*============================================================================
@@ -88,6 +97,12 @@ static void configDefaults() {
 
 static uint8_t ledBrightness = LED_BRIGHTNESS;
 
+/**
+ * 在应用全局亮度限制后，将状态 LED 设置为指定 RGB 颜色。
+ *
+ * 在支持 RGB LED 的目标板上会输出完整颜色；只有单色 LED 的板子上
+ * 会退化为简单的开关灯行为。
+ */
 void led(uint8_t r, uint8_t g, uint8_t b) {
     r = (uint8_t)((r * ledBrightness) / 255);
     g = (uint8_t)((g * ledBrightness) / 255);
@@ -100,28 +115,57 @@ void led(uint8_t r, uint8_t g, uint8_t b) {
 #endif
 }
 
-void ledOff()    { led(0, 0, 0); }
-void ledRed()    { led(255, 0, 0); }
-void ledOrange() { led(255, 80, 0); }
-void ledGreen()  { led(0, 255, 0); }
-void ledCyan()   { led(0, 255, 255); }
-void ledBlue()   { led(0, 0, 255); }
-void ledPurple() { led(128, 0, 255); }
+/** 关闭状态 LED。 */
+void ledOff() {
+    led(0, 0, 0);
+}
+
+/** 将状态 LED 设为红色。 */
+void ledRed() {
+    led(255, 0, 0);
+}
+
+/** 将状态 LED 设为橙色。 */
+void ledOrange() {
+    led(255, 80, 0);
+}
+
+/** 将状态 LED 设为绿色。 */
+void ledGreen() {
+    led(0, 255, 0);
+}
+
+/** 将状态 LED 设为青色。 */
+void ledCyan() {
+    led(0, 255, 255);
+}
+
+/** 将状态 LED 设为蓝色。 */
+void ledBlue() {
+    led(0, 0, 255);
+}
+
+/** 将状态 LED 设为紫色。 */
+void ledPurple() {
+    led(128, 0, 255);
+}
 
 /* Deferred reboot: allows Telegram ACK cycle to complete before restart */
-bool          g_reboot_pending = false;
-unsigned long g_reboot_at      = 0;
+bool g_reboot_pending = false;
+unsigned long g_reboot_at = 0;
 
 /*============================================================================
  * LittleFS Config Loading
  *============================================================================*/
 
 /**
- * Simple JSON string extractor - find "key":"value" and copy value to dst.
- * Returns true if found.
+ * 从 JSON 中提取 `key` 对应的非空字符串值到 `dst`。
+ *
+ * 这里故意实现成轻量且宽松的解析器，因为它只处理本项目受信任的
+ * 配置和工具参数，而不是任意 JSON 输入。
  */
 static bool jsonGetString(const char *json, const char *key,
-                           char *dst, int dst_len) {
+                          char *dst, int dst_len) {
     char pattern[64];
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
     const char *p = strstr(json, pattern);
@@ -144,8 +188,38 @@ static bool jsonGetString(const char *json, const char *key,
 }
 
 /**
- * Read a file from LittleFS into a buffer.
- * Returns bytes read, or -1 on error.
+ * 与 `jsonGetString()` 类似，但会把空字符串也视为有效配置值。
+ *
+ * 这对使用 `""` 明确关闭某项功能的字段是必要的。
+ */
+static bool jsonGetStringAllowEmpty(const char *json, const char *key,
+                                    char *dst, int dst_len) {
+    char pattern[64];
+    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    const char *p = strstr(json, pattern);
+    if (!p) return false;
+
+    p += strlen(pattern);
+    while (*p == ' ' || *p == ':') p++;
+    if (*p != '"') return false;
+    p++; /* skip opening quote */
+
+    int w = 0;
+    while (*p && *p != '"' && w < dst_len - 1) {
+        if (*p == '\\' && *(p + 1)) {
+            p++;
+        }
+        dst[w++] = *p++;
+    }
+    dst[w] = '\0';
+    return true;
+}
+
+/**
+ * 将整个 LittleFS 文件读入调用方提供的缓冲区。
+ *
+ * 只要文件打开成功，结果一定会以空字符结尾。
+ * 返回值是写入 `buf` 的字节数；如果文件无法打开则返回 `-1`。
  */
 static int readFile(const char *path, char *buf, int buf_len) {
     File f = LittleFS.open(path, "r");
@@ -158,7 +232,11 @@ static int readFile(const char *path, char *buf, int buf_len) {
 }
 
 /**
- * Load config from LittleFS. Falls back to secrets.h defaults.
+ * 从 LittleFS 加载运行时配置，并覆盖到默认值之上。
+ *
+ * 该函数会先调用 `configDefaults()` 重置内存中的配置，
+ * 然后在存在时加载 `/config.json` 与 `/system_prompt.txt`
+ * 中的持久化内容。
  */
 static bool loadConfig() {
     configDefaults();
@@ -176,35 +254,35 @@ static bool loadConfig() {
     int len = readFile("/config.json", json_buf, sizeof(json_buf));
     if (len > 0) {
         Serial.printf("LittleFS: loaded config.json (%d bytes)\n", len);
-        jsonGetString(json_buf, "wifi_ssid", cfg_wifi_ssid, sizeof(cfg_wifi_ssid));
-        jsonGetString(json_buf, "wifi_pass", cfg_wifi_pass, sizeof(cfg_wifi_pass));
-        jsonGetString(json_buf, "api_key", cfg_api_key, sizeof(cfg_api_key));
+        jsonGetStringAllowEmpty(json_buf, "wifi_ssid", cfg_wifi_ssid, sizeof(cfg_wifi_ssid));
+        jsonGetStringAllowEmpty(json_buf, "wifi_pass", cfg_wifi_pass, sizeof(cfg_wifi_pass));
+        jsonGetStringAllowEmpty(json_buf, "api_key", cfg_api_key, sizeof(cfg_api_key));
         jsonGetString(json_buf, "model", cfg_model, sizeof(cfg_model));
         jsonGetString(json_buf, "device_name", cfg_device_name, sizeof(cfg_device_name));
-        jsonGetString(json_buf, "api_base_url", cfg_api_base_url, sizeof(cfg_api_base_url));
-        jsonGetString(json_buf, "nats_host", cfg_nats_host, sizeof(cfg_nats_host));
+        jsonGetStringAllowEmpty(json_buf, "api_base_url", cfg_api_base_url, sizeof(cfg_api_base_url));
+        jsonGetStringAllowEmpty(json_buf, "nats_host", cfg_nats_host, sizeof(cfg_nats_host));
         char port_buf[8];
         if (jsonGetString(json_buf, "nats_port", port_buf, sizeof(port_buf))) {
             cfg_nats_port = atoi(port_buf);
         }
-        jsonGetString(json_buf, "telegram_token", cfg_telegram_token, sizeof(cfg_telegram_token));
-        jsonGetString(json_buf, "telegram_chat_id", cfg_telegram_chat_id, sizeof(cfg_telegram_chat_id));
+        jsonGetStringAllowEmpty(json_buf, "telegram_token", cfg_telegram_token, sizeof(cfg_telegram_token));
+        jsonGetStringAllowEmpty(json_buf, "telegram_chat_id", cfg_telegram_chat_id, sizeof(cfg_telegram_chat_id));
         char cd_buf[8];
         if (jsonGetString(json_buf, "telegram_cooldown", cd_buf, sizeof(cd_buf))) {
             cfg_telegram_cooldown = atoi(cd_buf);
         }
-        jsonGetString(json_buf, "qq_http_host", cfg_qq_http_host, sizeof(cfg_qq_http_host));
+        jsonGetStringAllowEmpty(json_buf, "qq_http_host", cfg_qq_http_host, sizeof(cfg_qq_http_host));
         char qq_port_buf[8];
         if (jsonGetString(json_buf, "qq_http_port", qq_port_buf, sizeof(qq_port_buf))) {
             cfg_qq_http_port = atoi(qq_port_buf);
         }
-        jsonGetString(json_buf, "qq_app_id", cfg_qq_app_id, sizeof(cfg_qq_app_id));
-        jsonGetString(json_buf, "qq_app_secret", cfg_qq_app_secret, sizeof(cfg_qq_app_secret));
+        jsonGetStringAllowEmpty(json_buf, "qq_app_id", cfg_qq_app_id, sizeof(cfg_qq_app_id));
+        jsonGetStringAllowEmpty(json_buf, "qq_app_secret", cfg_qq_app_secret, sizeof(cfg_qq_app_secret));
         char qq_cd_buf[8];
         if (jsonGetString(json_buf, "qq_cooldown", qq_cd_buf, sizeof(qq_cd_buf))) {
             cfg_qq_cooldown = atoi(qq_cd_buf);
         }
-        jsonGetString(json_buf, "timezone", cfg_timezone, sizeof(cfg_timezone));
+        jsonGetStringAllowEmpty(json_buf, "timezone", cfg_timezone, sizeof(cfg_timezone));
     } else {
         Serial.printf("LittleFS: no config.json, using defaults\n");
     }
@@ -232,7 +310,7 @@ temperature_sensor_handle_t g_temp_sensor = NULL;
 
 LlmClient llm;
 char serialBuf[SERIAL_BUF_SIZE];
-int  serialPos = 0;
+int serialPos = 0;
 
 /* NATS client (optional - only used if nats_host is configured) */
 NatsClient natsClient;
@@ -256,7 +334,7 @@ struct Turn {
 };
 
 static Turn history[MAX_HISTORY];
-static int  historyCount = 0;
+static int historyCount = 0;
 
 /*============================================================================
  * History Persistence (LittleFS)
@@ -264,6 +342,11 @@ static int  historyCount = 0;
 
 #define HISTORY_FILE "/history.json"
 
+/**
+ * 对字符串做转义，使其可以安全写入 JSON 字符串字面量。
+ *
+ * 这里只实现了本固件实际需要的最小转义集合。
+ */
 static int jsonEscape(char *dst, int dst_len, const char *src) {
     int w = 0;
     for (int i = 0; src[i] && w < dst_len - 1; i++) {
@@ -286,6 +369,12 @@ static int jsonEscape(char *dst, int dst_len, const char *src) {
     return w;
 }
 
+/**
+ * 将内存中的对话历史环形缓冲持久化到 LittleFS。
+ *
+ * 历史记录会以紧凑的 JSON 数组保存，便于下次开机时恢复，
+ * 且不需要重新请求 LLM。
+ */
 static void historySave() {
     File f = LittleFS.open(HISTORY_FILE, "w");
     if (!f) return;
@@ -309,6 +398,11 @@ static void historySave() {
     if (g_debug) Serial.printf("History: saved %d turns\n", historyCount);
 }
 
+/**
+ * 从 LittleFS 恢复先前保存的对话历史。
+ *
+ * 解析器故意保持轻量，只识别 `historySave()` 生成的那种固定 JSON 结构。
+ */
 static void historyLoad() {
     static char buf[8192];
     int len = readFile(HISTORY_FILE, buf, sizeof(buf));
@@ -327,8 +421,10 @@ static void historyLoad() {
         while (*s && *s != '"' && w < (int)sizeof(history[0].user) - 1) {
             if (*s == '\\' && *(s + 1)) {
                 s++;
-                if (*s == 'n') history[historyCount].user[w++] = '\n';
-                else history[historyCount].user[w++] = *s;
+                if (*s == 'n')
+                    history[historyCount].user[w++] = '\n';
+                else
+                    history[historyCount].user[w++] = *s;
             } else {
                 history[historyCount].user[w++] = *s;
             }
@@ -345,8 +441,10 @@ static void historyLoad() {
         while (*s && *s != '"' && w < (int)sizeof(history[0].assistant) - 1) {
             if (*s == '\\' && *(s + 1)) {
                 s++;
-                if (*s == 'n') history[historyCount].assistant[w++] = '\n';
-                else history[historyCount].assistant[w++] = *s;
+                if (*s == 'n')
+                    history[historyCount].assistant[w++] = '\n';
+                else
+                    history[historyCount].assistant[w++] = *s;
             } else {
                 history[historyCount].assistant[w++] = *s;
             }
@@ -369,10 +467,18 @@ static void historyLoad() {
  *============================================================================*/
 
 #if !defined(CONFIG_IDF_TARGET_ESP32)
+/**
+ * 在支持该功能的芯片上初始化内置温度传感器。
+ *
+ * 传统 ESP32 目标板不走这条路径，因为其 Arduino/IDF 支持方式不同。
+ */
 void initTempSensor() {
     temperature_sensor_config_t config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-10, 80);
     esp_err_t err = temperature_sensor_install(&config, &g_temp_sensor);
-    if (err != ESP_OK) { Serial.printf("Temp sensor install failed: %d\n", err); return; }
+    if (err != ESP_OK) {
+        Serial.printf("Temp sensor install failed: %d\n", err);
+        return;
+    }
     err = temperature_sensor_enable(g_temp_sensor);
     if (err != ESP_OK) { Serial.printf("Temp sensor enable failed: %d\n", err); }
 }
@@ -382,6 +488,12 @@ void initTempSensor() {
  * WiFi
  *============================================================================*/
 
+/**
+ * 让 STA 接口连接到配置中的 WiFi 网络。
+ *
+ * 该函数会在有限次数内阻塞重试，并更新状态 LED。
+ * 只有在成功连网并拿到 DHCP 地址后才返回 `true`。
+ */
 bool connectWiFi() {
     Serial.printf("WiFi: Connecting to %s", cfg_wifi_ssid);
     ledOrange();
@@ -393,7 +505,10 @@ bool connectWiFi() {
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
-        if (attempts % 2 == 0) ledOrange(); else ledOff();
+        if (attempts % 2 == 0)
+            ledOrange();
+        else
+            ledOff();
         if (++attempts > 30) {
             Serial.println(" FAILED!");
             ledRed();
@@ -419,8 +534,11 @@ char toolCallJsonBuf[4096]; /* copy of tool_calls_json for message building */
 static char memoryBuf[512]; /* persistent AI memory from /memory.txt */
 
 /**
- * Run the agentic chat loop. Returns pointer to the response text
- * (valid until next call), or nullptr on error.
+ * 执行一次完整的 Agent 式 LLM 交互，包括多轮工具调用。
+ *
+ * 该函数会组装当前系统提示词、可选持久记忆、最近对话历史以及新的用户消息，
+ * 然后在“模型响应”和“工具执行”之间循环，直到得到最终文本回复或发生错误。
+ * 返回的指针在下一次调用 LLM 之前保持有效。
  */
 const char *chatWithLLM(const char *userMessage) {
     /* Re-entrancy guard: remote_chat calls natsClient.process() which can
@@ -433,7 +551,7 @@ const char *chatWithLLM(const char *userMessage) {
     chatActive = true;
 
     g_led_user = false; /* Reset - status LEDs allowed until a tool sets the LED */
-    ledBlue(); /* Thinking... */
+    ledBlue();          /* Thinking... */
 
     /*
      * Message array for the full agentic conversation.
@@ -454,12 +572,12 @@ const char *chatWithLLM(const char *userMessage) {
     }
 
     /* History */
-    int histStart = msgCount;  /* index where history pairs begin */
+    int histStart = msgCount; /* index where history pairs begin */
     for (int i = 0; i < historyCount && msgCount < LLM_MAX_MESSAGES - 2; i++) {
         messages[msgCount++] = llmMsg("user", history[i].user);
         messages[msgCount++] = llmMsg("assistant", history[i].assistant);
     }
-    int histEnd = msgCount;    /* index after last history message */
+    int histEnd = msgCount; /* index after last history message */
 
     /* Current user message */
     messages[msgCount++] = llmMsg("user", userMessage);
@@ -478,8 +596,7 @@ const char *chatWithLLM(const char *userMessage) {
         ok = llm.chat(messages, msgCount, tools_json, &result);
 
         /* If request too large, drop oldest history pair and retry */
-        while (!ok && strstr(llm.lastError(), "too large") &&
-               histStart + 2 <= histEnd) {
+        while (!ok && strstr(llm.lastError(), "too large") && histStart + 2 <= histEnd) {
             Serial.printf("[Agent] Request too large, dropping oldest history\n");
             /* Remove 2 messages (user+assistant) at histStart */
             memmove(&messages[histStart], &messages[histStart + 2],
@@ -580,9 +697,15 @@ const char *chatWithLLM(const char *userMessage) {
  * NATS Callbacks
  *============================================================================*/
 
+/**
+ * 跟踪 NATS 客户端的高层状态变化，用于状态展示和日志输出。
+ *
+ * 该回调会在连接初始化时注册一次，并让全局连接状态与底层传输状态保持同步。
+ */
 static void onNatsEvent(nats_client_t *client, nats_event_t event,
                         void *userdata) {
-    (void)client; (void)userdata;
+    (void)client;
+    (void)userdata;
     switch (event) {
     case NATS_EVENT_CONNECTED:
         Serial.printf("NATS: connected\n");
@@ -604,8 +727,10 @@ static void onNatsEvent(nats_client_t *client, nats_event_t event,
 static void tgYield(); /* forward declaration */
 
 /**
- * NATS chat handler - request/reply. Caller sends a message,
- * we run the agentic loop and respond with the LLM answer.
+ * 处理来自 NATS 的聊天请求，并返回 LLM 回复。
+ *
+ * 这条路径与本地聊天逻辑基本一致，只是外层包了一层 NATS request/reply，
+ * 并可选地把最终回复重新发布到设备事件主题。
  */
 static void onNatsChat(nats_client_t *client, const nats_msg_t *msg,
                        void *userdata) {
@@ -614,8 +739,7 @@ static void onNatsChat(nats_client_t *client, const nats_msg_t *msg,
 
     /* Copy payload (not null-terminated) */
     static char chatBuf[512];
-    size_t len = msg->data_len < sizeof(chatBuf) - 1
-                 ? msg->data_len : sizeof(chatBuf) - 1;
+    size_t len = msg->data_len < sizeof(chatBuf) - 1 ? msg->data_len : sizeof(chatBuf) - 1;
     memcpy(chatBuf, msg->data, len);
     chatBuf[len] = '\0';
 
@@ -649,33 +773,32 @@ extern bool g_qq_enabled;
 static char cmdResponseBuf[1024];
 
 /**
- * Execute a device command, writing compact result to buf.
- * cmd is the command name WITHOUT leading "/" (e.g. "status", "clear").
- * Returns true if the command was recognized and handled.
+ * 执行所有前端共用的斜杠维护命令。
+ *
+ * `cmd` 不应包含前导 `/`。格式化后的结果会写入 `buf`，
+ * 返回值表示该命令是否被识别并成功处理。
  */
 static bool handleCommand(const char *cmd, char *buf, int buf_len) {
     if (strcmp(cmd, "status") == 0) {
         snprintf(buf, buf_len,
-            "WiFi: %s (%s)\n"
-            "Heap: %u / %u\n"
-            "History: %d turns\n"
-            "Model: %s\n"
-            "Debug: %s\n"
-            "NATS: %s\n"
-            "Telegram: %s\n"
-            "QQ: %s\n"
-            "Uptime: %lus",
-            WiFi.status() == WL_CONNECTED ? "connected" : "disconnected",
-            WiFi.localIP().toString().c_str(),
-            ESP.getFreeHeap(), ESP.getHeapSize(),
-            historyCount, cfg_model,
-            g_debug ? "ON" : "OFF",
-            g_nats_enabled
-                ? (g_nats_connected ? "connected" : "disconnected")
-                : "disabled",
-            g_telegram_enabled ? "enabled" : "disabled",
-            g_qq_enabled ? "enabled" : "disabled",
-            millis() / 1000);
+                 "WiFi: %s (%s)\n"
+                 "Heap: %u / %u\n"
+                 "History: %d turns\n"
+                 "Model: %s\n"
+                 "Debug: %s\n"
+                 "NATS: %s\n"
+                 "Telegram: %s\n"
+                 "QQ: %s\n"
+                 "Uptime: %lus",
+                 WiFi.status() == WL_CONNECTED ? "connected" : "disconnected",
+                 WiFi.localIP().toString().c_str(),
+                 ESP.getFreeHeap(), ESP.getHeapSize(),
+                 historyCount, cfg_model,
+                 g_debug ? "ON" : "OFF",
+                 g_nats_enabled ? (g_nats_connected ? "connected" : "disconnected") : "disabled",
+                 g_telegram_enabled ? "enabled" : "disabled",
+                 g_qq_enabled ? "enabled" : "disabled",
+                 millis() / 1000);
         return true;
     }
     if (strcmp(cmd, "clear") == 0) {
@@ -703,23 +826,23 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
             if (d->kind == DEV_SENSOR_SERIAL_TEXT) {
                 float val = deviceReadSensor(d);
                 w += snprintf(buf + w, buf_len - w,
-                    "%s [serial_text] %ubaud = %.1f %s",
-                    d->name, (unsigned)d->baud, val, d->unit);
+                              "%s [serial_text] %ubaud = %.1f %s",
+                              d->name, (unsigned)d->baud, val, d->unit);
             } else if (d->kind == DEV_SENSOR_NATS_VALUE) {
                 float val = deviceReadSensor(d);
                 w += snprintf(buf + w, buf_len - w,
-                    "%s [nats_value] %s = %.1f %s",
-                    d->name, d->nats_subject, val, d->unit);
+                              "%s [nats_value] %s = %.1f %s",
+                              d->name, d->nats_subject, val, d->unit);
             } else if (deviceIsSensor(d->kind)) {
                 float val = deviceReadSensor(d);
                 w += snprintf(buf + w, buf_len - w,
-                    "%s [%s] pin=%d = %.1f %s",
-                    d->name, deviceKindName(d->kind), d->pin, val, d->unit);
+                              "%s [%s] pin=%d = %.1f %s",
+                              d->name, deviceKindName(d->kind), d->pin, val, d->unit);
             } else {
                 w += snprintf(buf + w, buf_len - w,
-                    "%s [%s] pin=%d%s",
-                    d->name, deviceKindName(d->kind), d->pin,
-                    d->inverted ? " (inverted)" : "");
+                              "%s [%s] pin=%d%s",
+                              d->name, deviceKindName(d->kind), d->pin,
+                              d->inverted ? " (inverted)" : "");
             }
         }
         if (w == 0) snprintf(buf, buf_len, "No devices");
@@ -735,23 +858,23 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
             /* Header: id 'name' [ON] sensor cond threshold val=X state */
             uint32_t eval_ago = r->last_eval ? (millis() - r->last_eval) / 1000 : 0;
             w += snprintf(buf + w, buf_len - w,
-                "%s '%s' [%s] %s %s %d val=%.1f %s eval=%us every=%us",
-                r->id, r->name,
-                r->enabled ? "ON" : "OFF",
-                r->sensor_name[0] ? r->sensor_name :
-                    (r->condition == COND_CHAINED ? "" : "gpio"),
-                conditionOpName(r->condition),
-                (int)r->threshold,
-                r->last_reading,
-                r->fired ? "FIRED" : "idle",
-                (unsigned)eval_ago, (unsigned)(r->interval_ms / 1000));
+                          "%s '%s' [%s] %s %s %d val=%.1f %s eval=%us every=%us",
+                          r->id, r->name,
+                          r->enabled ? "ON" : "OFF",
+                          r->sensor_name[0] ? r->sensor_name :
+                                              (r->condition == COND_CHAINED ? "" : "gpio"),
+                          conditionOpName(r->condition),
+                          (int)r->threshold,
+                          r->last_reading,
+                          r->fired ? "FIRED" : "idle",
+                          (unsigned)eval_ago, (unsigned)(r->interval_ms / 1000));
             /* ON action */
             w += snprintf(buf + w, buf_len - w, "\n  on: %s",
                           actionTypeName(r->on_action));
             if (r->on_action == ACT_LED_SET) {
                 int32_t v = r->on_value;
                 w += snprintf(buf + w, buf_len - w,
-                    "(%d,%d,%d)", (v>>16)&0xFF, (v>>8)&0xFF, v&0xFF);
+                              "(%d,%d,%d)", (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
             } else if (r->on_action == ACT_TELEGRAM
                        || r->on_action == ACT_NATS_PUBLISH
                        || r->on_action == ACT_SERIAL_SEND) {
@@ -760,7 +883,7 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
                 w += snprintf(buf + w, buf_len - w, " %s", r->on_actuator);
             } else if (r->on_action == ACT_GPIO_WRITE) {
                 w += snprintf(buf + w, buf_len - w,
-                    " pin=%d val=%d", r->on_pin, (int)r->on_value);
+                              " pin=%d val=%d", r->on_pin, (int)r->on_value);
             }
             /* OFF action */
             if (r->has_off_action) {
@@ -769,29 +892,29 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
                 if (r->off_action == ACT_LED_SET) {
                     int32_t v = r->off_value;
                     w += snprintf(buf + w, buf_len - w,
-                        "(%d,%d,%d)", (v>>16)&0xFF, (v>>8)&0xFF, v&0xFF);
+                                  "(%d,%d,%d)", (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
                 } else if (r->off_action == ACT_TELEGRAM
                            || r->off_action == ACT_NATS_PUBLISH
                            || r->off_action == ACT_SERIAL_SEND) {
                     w += snprintf(buf + w, buf_len - w,
-                        " \"%s\"", r->off_nats_pay);
+                                  " \"%s\"", r->off_nats_pay);
                 } else if (r->off_action == ACT_ACTUATOR) {
                     w += snprintf(buf + w, buf_len - w,
-                        " %s", r->off_actuator);
+                                  " %s", r->off_actuator);
                 } else if (r->off_action == ACT_GPIO_WRITE) {
                     w += snprintf(buf + w, buf_len - w,
-                        " pin=%d val=%d", r->off_pin, (int)r->off_value);
+                                  " pin=%d val=%d", r->off_pin, (int)r->off_value);
                 }
             }
             /* Chain links */
             if (r->chain_id[0])
                 w += snprintf(buf + w, buf_len - w,
-                    "\n  chain: ->%s (%us)",
-                    r->chain_id, (unsigned)(r->chain_delay_ms / 1000));
+                              "\n  chain: ->%s (%us)",
+                              r->chain_id, (unsigned)(r->chain_delay_ms / 1000));
             if (r->chain_off_id[0])
                 w += snprintf(buf + w, buf_len - w,
-                    "\n  chain-off: ->%s (%us)",
-                    r->chain_off_id, (unsigned)(r->chain_off_delay_ms / 1000));
+                              "\n  chain-off: ->%s (%us)",
+                              r->chain_off_id, (unsigned)(r->chain_off_delay_ms / 1000));
         }
         if (w == 0) snprintf(buf, buf_len, "No rules");
         return true;
@@ -805,10 +928,10 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
         struct tm timeinfo;
         if (getLocalTime(&timeinfo, 0)) {
             snprintf(buf, buf_len,
-                "%04d-%02d-%02d %02d:%02d:%02d (TZ=%s)",
-                timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
-                timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,
-                cfg_timezone);
+                     "%04d-%02d-%02d %02d:%02d:%02d (TZ=%s)",
+                     timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+                     timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,
+                     cfg_timezone);
         } else {
             snprintf(buf, buf_len, "NTP not synced yet");
         }
@@ -823,11 +946,11 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
         for (int i = 0; i < historyCount && w < buf_len - 80; i++) {
             int alen = strlen(history[i].assistant);
             w += snprintf(buf + w, buf_len - w,
-                "[%d] %.40s%s\n  -> %.60s%s\n",
-                i + 1, history[i].user,
-                strlen(history[i].user) > 40 ? "..." : "",
-                history[i].assistant,
-                alen > 60 ? "..." : "");
+                          "[%d] %.40s%s\n  -> %.60s%s\n",
+                          i + 1, history[i].user,
+                          strlen(history[i].user) > 40 ? "..." : "",
+                          history[i].assistant,
+                          alen > 60 ? "..." : "");
         }
         return true;
     }
@@ -845,8 +968,8 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
     }
     if (strcmp(cmd, "help") == 0) {
         snprintf(buf, buf_len,
-            "Commands: /status /clear /heap /debug /devices /rules "
-            "/memory /time /history /model /reboot /help");
+                 "Commands: /status /clear /heap /debug /devices /rules "
+                 "/memory /time /history /model /reboot /help");
         return true;
     }
     if (strcmp(cmd, "reboot") == 0) {
@@ -862,16 +985,19 @@ static bool handleCommand(const char *cmd, char *buf, int buf_len) {
 }
 
 /**
- * NATS command handler.
+ * 通过调用 `handleCommand()` 处理 NATS 命令请求。
+ *
+ * 无论成功还是失败，结果都会返回给请求方；
+ * 如果条件允许，还会同步发布到设备的事件主题。
  */
 static void onNatsCmd(nats_client_t *client, const nats_msg_t *msg,
                       void *userdata) {
-    (void)client; (void)userdata;
+    (void)client;
+    (void)userdata;
     if (msg->data_len == 0) return;
 
     static char cmdBuf[64];
-    size_t len = msg->data_len < sizeof(cmdBuf) - 1
-                 ? msg->data_len : sizeof(cmdBuf) - 1;
+    size_t len = msg->data_len < sizeof(cmdBuf) - 1 ? msg->data_len : sizeof(cmdBuf) - 1;
     memcpy(cmdBuf, msg->data, len);
     cmdBuf[len] = '\0';
 
@@ -897,10 +1023,9 @@ static void onNatsCmd(nats_client_t *client, const nats_msg_t *msg,
  *============================================================================*/
 
 /**
- * NATS tool_exec handler - direct tool execution without LLM.
- * Flat JSON protocol: {"tool":"led_set","r":255,"g":0,"b":0}
- * The entire payload passes straight to toolExecute() since handlers
- * use strstr-based parsing and ignore unknown keys like "tool".
+ * 执行通过 NATS 收到的直接工具调用。
+ *
+ * 这条路径会完全绕过 LLM，适用于 OpenClaw 或已经明确知道要执行哪个工具的自动化流程。
  */
 static void onNatsToolExec(nats_client_t *client, const nats_msg_t *msg,
                            void *userdata) {
@@ -908,14 +1033,13 @@ static void onNatsToolExec(nats_client_t *client, const nats_msg_t *msg,
     if (msg->data_len == 0) {
         if (msg->reply_len > 0)
             nats_msg_respond_str(client, msg,
-                "{\"ok\":false,\"error\":\"empty payload\"}");
+                                 "{\"ok\":false,\"error\":\"empty payload\"}");
         return;
     }
 
     /* Copy payload into toolCallJsonBuf (idle — only used by chatWithLLM,
      * which we never call from this callback). */
-    size_t len = msg->data_len < sizeof(toolCallJsonBuf) - 1
-                 ? msg->data_len : sizeof(toolCallJsonBuf) - 1;
+    size_t len = msg->data_len < sizeof(toolCallJsonBuf) - 1 ? msg->data_len : sizeof(toolCallJsonBuf) - 1;
     memcpy(toolCallJsonBuf, msg->data, len);
     toolCallJsonBuf[len] = '\0';
 
@@ -927,7 +1051,7 @@ static void onNatsToolExec(nats_client_t *client, const nats_msg_t *msg,
         Serial.printf("[NATS] tool_exec: missing 'tool' key\n");
         if (msg->reply_len > 0)
             nats_msg_respond_str(client, msg,
-                "{\"ok\":false,\"error\":\"missing 'tool' key\"}");
+                                 "{\"ok\":false,\"error\":\"missing 'tool' key\"}");
         return;
     }
 
@@ -936,7 +1060,7 @@ static void onNatsToolExec(nats_client_t *client, const nats_msg_t *msg,
         Serial.printf("[NATS] tool_exec: blocked tool '%s'\n", toolName);
         if (msg->reply_len > 0)
             nats_msg_respond_str(client, msg,
-                "{\"ok\":false,\"error\":\"remote_chat not available via tool_exec\"}");
+                                 "{\"ok\":false,\"error\":\"remote_chat not available via tool_exec\"}");
         return;
     }
 
@@ -948,7 +1072,7 @@ static void onNatsToolExec(nats_client_t *client, const nats_msg_t *msg,
             Serial.printf("[NATS] tool_exec: blocked write to /memory.txt\n");
             if (msg->reply_len > 0)
                 nats_msg_respond_str(client, msg,
-                    "{\"ok\":false,\"error\":\"cannot write to /memory.txt via tool_exec\"}");
+                                     "{\"ok\":false,\"error\":\"cannot write to /memory.txt via tool_exec\"}");
             return;
         }
     }
@@ -982,15 +1106,17 @@ static void onNatsToolExec(nats_client_t *client, const nats_msg_t *msg,
     if (g_nats_connected) {
         static char evtBuf[128];
         snprintf(evtBuf, sizeof(evtBuf),
-            "{\"event\":\"tool_exec\",\"tool\":\"%s\",\"ok\":%s}",
-            toolName, ok ? "true" : "false");
+                 "{\"event\":\"tool_exec\",\"tool\":\"%s\",\"ok\":%s}",
+                 toolName, ok ? "true" : "false");
         natsClient.publish(natsSubjectEvents, evtBuf);
     }
 }
 
 /**
- * NATS capabilities handler - returns device state as JSON.
- * Used by OpenClaw for discovery: what tools/devices/rules are available.
+ * 发布一份设备当前暴露能力的 JSON 快照。
+ *
+ * OpenClaw 会用它来发现该 WireClaw 节点支持的工具、已注册设备、
+ * 活动规则以及基础 HAL 能力。
  */
 static void onNatsCapabilities(nats_client_t *client, const nats_msg_t *msg,
                                void *userdata) {
@@ -1001,16 +1127,16 @@ static void onNatsCapabilities(nats_client_t *client, const nats_msg_t *msg,
     int w = 0;
 
     w += snprintf(toolCallJsonBuf + w, sizeof(toolCallJsonBuf) - w,
-        "{\"device\":\"%s\",\"version\":\"%s\",\"free_heap\":%u,",
-        cfg_device_name, WIRECLAW_VERSION, ESP.getFreeHeap());
+                  "{\"device\":\"%s\",\"version\":\"%s\",\"free_heap\":%u,",
+                  cfg_device_name, WIRECLAW_VERSION, ESP.getFreeHeap());
 
     /* Tools list */
     w += snprintf(toolCallJsonBuf + w, sizeof(toolCallJsonBuf) - w,
-        "\"tools\":[\"led_set\",\"gpio_write\",\"gpio_read\",\"device_info\","
-        "\"file_read\",\"file_write\",\"nats_publish\",\"temperature_read\","
-        "\"device_register\",\"device_list\",\"device_remove\",\"sensor_read\","
-        "\"actuator_set\",\"rule_create\",\"rule_list\",\"rule_delete\","
-        "\"rule_enable\",\"serial_send\",\"chain_create\"],");
+                  "\"tools\":[\"led_set\",\"gpio_write\",\"gpio_read\",\"device_info\","
+                  "\"file_read\",\"file_write\",\"nats_publish\",\"temperature_read\","
+                  "\"device_register\",\"device_list\",\"device_remove\",\"sensor_read\","
+                  "\"actuator_set\",\"rule_create\",\"rule_list\",\"rule_delete\","
+                  "\"rule_enable\",\"serial_send\",\"chain_create\"],");
 
     /* Devices */
     w += snprintf(toolCallJsonBuf + w, sizeof(toolCallJsonBuf) - w, "\"devices\":[");
@@ -1024,12 +1150,12 @@ static void onNatsCapabilities(nats_client_t *client, const nats_msg_t *msg,
         if (deviceIsSensor(d->kind)) {
             float val = deviceReadSensor(d);
             w += snprintf(toolCallJsonBuf + w, sizeof(toolCallJsonBuf) - w,
-                "{\"name\":\"%s\",\"kind\":\"%s\",\"value\":%.1f,\"unit\":\"%s\"}",
-                d->name, deviceKindName(d->kind), val, d->unit);
+                          "{\"name\":\"%s\",\"kind\":\"%s\",\"value\":%.1f,\"unit\":\"%s\"}",
+                          d->name, deviceKindName(d->kind), val, d->unit);
         } else {
             w += snprintf(toolCallJsonBuf + w, sizeof(toolCallJsonBuf) - w,
-                "{\"name\":\"%s\",\"kind\":\"%s\",\"pin\":%d}",
-                d->name, deviceKindName(d->kind), d->pin);
+                          "{\"name\":\"%s\",\"kind\":\"%s\",\"pin\":%d}",
+                          d->name, deviceKindName(d->kind), d->pin);
         }
     }
     w += snprintf(toolCallJsonBuf + w, sizeof(toolCallJsonBuf) - w, "],");
@@ -1044,17 +1170,17 @@ static void onNatsCapabilities(nats_client_t *client, const nats_msg_t *msg,
         if (!firstRule) toolCallJsonBuf[w++] = ',';
         firstRule = false;
         w += snprintf(toolCallJsonBuf + w, sizeof(toolCallJsonBuf) - w,
-            "{\"id\":\"%s\",\"name\":\"%s\",\"enabled\":%s,\"condition\":\"%s\","
-            "\"sensor\":\"%s\",\"fired\":%s}",
-            r->id, r->name,
-            r->enabled ? "true" : "false",
-            conditionOpName(r->condition),
-            r->sensor_name,
-            r->fired ? "true" : "false");
+                      "{\"id\":\"%s\",\"name\":\"%s\",\"enabled\":%s,\"condition\":\"%s\","
+                      "\"sensor\":\"%s\",\"fired\":%s}",
+                      r->id, r->name,
+                      r->enabled ? "true" : "false",
+                      conditionOpName(r->condition),
+                      r->sensor_name,
+                      r->fired ? "true" : "false");
     }
     w += snprintf(toolCallJsonBuf + w, sizeof(toolCallJsonBuf) - w,
-        "],\"hal\":{\"gpio\":true,\"adc\":true,\"pwm\":true,"
-        "\"dac\":false,\"uart\":true,\"system_temp\":true}}");
+                  "],\"hal\":{\"gpio\":true,\"adc\":true,\"pwm\":true,"
+                  "\"dac\":false,\"uart\":true,\"system_temp\":true}}");
 
     Serial.printf("[NATS] capabilities: %d bytes\n> ", w);
 
@@ -1078,6 +1204,11 @@ static void onNatsValue(nats_client_t *client, const nats_msg_t *msg,
                                dev->name, dev->nats_value, dev->nats_msg);
 }
 
+/**
+ * 在主 NATS 客户端连上后，订阅所有已注册的 NATS 虚拟传感器。
+ *
+ * 每个设备都会记录自己的订阅 SID，便于在断线重连或设备删除时正确取消和恢复订阅。
+ */
 void natsSubscribeDeviceSensors() {
     if (!g_nats_connected) return;
     Device *devs = deviceGetAllMutable();
@@ -1100,6 +1231,11 @@ void natsSubscribeDeviceSensors() {
     }
 }
 
+/**
+ * 取消指定名称的 NATS 虚拟传感器订阅。
+ *
+ * 这在设备被删除或运行时重新配置时使用。
+ */
 void natsUnsubscribeDevice(const char *name) {
     if (!g_nats_connected) return;
     Device *devs = deviceGetAllMutable();
@@ -1117,7 +1253,10 @@ void natsUnsubscribeDevice(const char *name) {
 }
 
 /**
- * Build NATS subject strings from device_name prefix.
+ * 构建当前设备完整的 NATS subject 命名空间。
+ *
+ * 这些主题名都基于 `cfg_device_name` 生成，
+ * 从而让多个 WireClaw 节点可以无冲突地共存于同一个 broker。
  */
 static void buildNatsSubjects() {
     snprintf(natsSubjectChat, sizeof(natsSubjectChat),
@@ -1135,7 +1274,10 @@ static void buildNatsSubjects() {
 }
 
 /**
- * Connect to NATS server and subscribe to topics.
+ * 建立主 NATS 连接并挂载所有核心订阅。
+ *
+ * 该函数会注册聊天、命令、工具执行、能力发现、HAL 和虚拟传感器订阅，
+ * 然后发送一条上线事件。
  */
 static bool connectNats() {
     Serial.printf("NATS: connecting to %s:%d...\n", cfg_nats_host, cfg_nats_port);
@@ -1214,23 +1356,26 @@ static bool connectNats() {
 
 static WiFiClientSecure tgClient;
 bool g_telegram_enabled = false;
-static int  tgLastUpdateId = 0;
+static int tgLastUpdateId = 0;
 static unsigned long tgLastPoll = 0;
 
 /* Long-poll state machine */
-enum TgState { TG_IDLE, TG_WAITING };
+enum TgState { TG_IDLE,
+               TG_WAITING };
 static TgState tgState = TG_IDLE;
 static unsigned long tgWaitStart = 0;
-#define TG_RECONNECT_MS   5000   /* 5s between long-poll cycles */
-#define TG_LONG_POLL_S    30     /* Telegram server hold time (seconds) */
-#define TG_WAIT_TIMEOUT   35000  /* client-side timeout: long-poll + 5s grace */
+#define TG_RECONNECT_MS 5000  /* 5s between long-poll cycles */
+#define TG_LONG_POLL_S 30     /* Telegram server hold time (seconds) */
+#define TG_WAIT_TIMEOUT 35000 /* client-side timeout: long-poll + 5s grace */
 
 static const char *TG_HOST = "api.telegram.org";
-static const int   TG_PORT = 443;
+static const int TG_PORT = 443;
 
 /**
- * Make an HTTPS request to Telegram Bot API.
- * Writes response body into buf, returns body length or -1 on error.
+ * 执行一次原始的 Telegram Bot API POST 请求，并抓取响应体。
+ *
+ * 该辅助函数会管理 TLS 连接生命周期，
+ * 返回写入 `buf` 的字节数；失败时返回 `-1`。
  */
 static int tgApiCall(const char *method, const char *body, int body_len,
                      char *buf, int buf_len) {
@@ -1244,12 +1389,12 @@ static int tgApiCall(const char *method, const char *body, int body_len,
     /* Build full request in one buffer to send at once */
     static char httpReq[512];
     int hdr_len = snprintf(httpReq, sizeof(httpReq),
-        "POST /bot%s/%s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: %d\r\n"
-        "Connection: close\r\n\r\n",
-        cfg_telegram_token, method, TG_HOST, body_len);
+                           "POST /bot%s/%s HTTP/1.1\r\n"
+                           "Host: %s\r\n"
+                           "Content-Type: application/json\r\n"
+                           "Content-Length: %d\r\n"
+                           "Connection: close\r\n\r\n",
+                           cfg_telegram_token, method, TG_HOST, body_len);
 
     tgClient.write((uint8_t *)httpReq, hdr_len);
     if (body_len > 0) {
@@ -1314,7 +1459,9 @@ static int tgApiCall(const char *method, const char *body, int body_len,
 }
 
 /**
- * Send a message to the allowed chat.
+ * 向配置中的 Telegram 会话发送一条纯文本消息。
+ *
+ * 文本会先在本地做 JSON 转义，再发给 Telegram Bot API。
  */
 bool tgSendMessage(const char *text) {
     static char req[LLM_MAX_RESPONSE_LEN + 256];
@@ -1337,7 +1484,7 @@ bool tgSendMessage(const char *text) {
     escaped[w] = '\0';
 
     int req_len = snprintf(req, sizeof(req),
-        "{\"chat_id\":%s,\"text\":\"%s\"}", cfg_telegram_chat_id, escaped);
+                           "{\"chat_id\":%s,\"text\":\"%s\"}", cfg_telegram_chat_id, escaped);
 
     static char resp[256];
     int rlen = tgApiCall("sendMessage", req, req_len, resp, sizeof(resp));
@@ -1349,17 +1496,15 @@ bool tgSendMessage(const char *text) {
 }
 
 /**
- * Non-blocking Telegram long-poll state machine.
- * Called from loop() every iteration. Keeps the connection open for up to
- * TG_LONG_POLL_S seconds — Telegram's server holds the response until an
- * update arrives or the timeout expires. This reduces TLS handshakes from
- * ~360/hour to ~120/hour and provides near-instant message delivery.
+ * 在一次 `loop()` 迭代中推进 Telegram 长轮询状态机。
+ *
+ * 这样可以让 Telegram 接收逻辑尽量保持非阻塞，同时仍能处理命令、
+ * 分发聊天请求以及配合延迟重启流程。
  */
 static void telegramTick() {
     unsigned long now = millis();
 
     switch (tgState) {
-
     case TG_IDLE: {
         /* Skip reconnect delay when reboot pending (fast ACK) */
         unsigned long wait = g_reboot_pending ? 500 : TG_RECONNECT_MS;
@@ -1376,17 +1521,17 @@ static void telegramTick() {
         static char body[128];
         int body_len;
         body_len = snprintf(body, sizeof(body),
-            "{\"offset\":%d,\"limit\":1,\"timeout\":%d}",
-            tgLastUpdateId + 1, g_reboot_pending ? 0 : TG_LONG_POLL_S);
+                            "{\"offset\":%d,\"limit\":1,\"timeout\":%d}",
+                            tgLastUpdateId + 1, g_reboot_pending ? 0 : TG_LONG_POLL_S);
 
         static char httpReq[512];
         int hdr_len = snprintf(httpReq, sizeof(httpReq),
-            "POST /bot%s/getUpdates HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "Content-Type: application/json\r\n"
-            "Content-Length: %d\r\n"
-            "Connection: close\r\n\r\n",
-            cfg_telegram_token, TG_HOST, body_len);
+                               "POST /bot%s/getUpdates HTTP/1.1\r\n"
+                               "Host: %s\r\n"
+                               "Content-Type: application/json\r\n"
+                               "Content-Length: %d\r\n"
+                               "Connection: close\r\n\r\n",
+                               cfg_telegram_token, TG_HOST, body_len);
 
         tgClient.write((uint8_t *)httpReq, hdr_len);
         tgClient.write((uint8_t *)body, body_len);
@@ -1477,9 +1622,15 @@ static void telegramTick() {
 
         /* Extract chat_id from message.chat.id */
         const char *chat_id_str = strstr(resp, "\"chat\"");
-        if (!chat_id_str) { if (g_debug) Serial.printf("[TG] no chat field\n"); return; }
+        if (!chat_id_str) {
+            if (g_debug) Serial.printf("[TG] no chat field\n");
+            return;
+        }
         const char *id_str = strstr(chat_id_str, "\"id\"");
-        if (!id_str) { if (g_debug) Serial.printf("[TG] no id in chat\n"); return; }
+        if (!id_str) {
+            if (g_debug) Serial.printf("[TG] no id in chat\n");
+            return;
+        }
         p = id_str + 4;
         while (*p == ':' || *p == ' ') p++;
         char incoming_chat_id[16];
@@ -1501,10 +1652,16 @@ static void telegramTick() {
 
         /* Extract message text - find "text":"..." */
         const char *text_key = strstr(resp, "\"text\"");
-        if (!text_key) { if (g_debug) Serial.printf("[TG] no text field\n"); return; }
+        if (!text_key) {
+            if (g_debug) Serial.printf("[TG] no text field\n");
+            return;
+        }
         p = text_key + 6;
         while (*p == ':' || *p == ' ') p++;
-        if (*p != '"') { if (g_debug) Serial.printf("[TG] text not a string\n"); return; }
+        if (*p != '"') {
+            if (g_debug) Serial.printf("[TG] text not a string\n");
+            return;
+        }
         p++;
 
         static char msgBuf[512];
@@ -1512,8 +1669,10 @@ static void telegramTick() {
         while (*p && *p != '"' && mw < (int)sizeof(msgBuf) - 1) {
             if (*p == '\\' && *(p + 1)) {
                 p++;
-                if (*p == 'n') msgBuf[mw++] = '\n';
-                else msgBuf[mw++] = *p;
+                if (*p == 'n')
+                    msgBuf[mw++] = '\n';
+                else
+                    msgBuf[mw++] = *p;
             } else {
                 msgBuf[mw++] = *p;
             }
@@ -1521,7 +1680,10 @@ static void telegramTick() {
         }
         msgBuf[mw] = '\0';
 
-        if (mw == 0) { if (g_debug) Serial.printf("[TG] empty text\n"); return; }
+        if (mw == 0) {
+            if (g_debug) Serial.printf("[TG] empty text\n");
+            return;
+        }
 
         Serial.printf("\n[TG] Message from %s: %s\n", incoming_chat_id, msgBuf);
 
@@ -1563,7 +1725,7 @@ static void telegramTick() {
     }
 }
 
-/** Release Telegram TLS connection if active, so LLM can use the heap. */
+/** 如果 Telegram TLS 连接仍然活跃，则主动释放，以便给 LLM 腾出堆内存。 */
 static void tgYield() {
     if (tgState != TG_IDLE) {
         tgClient.stop();
@@ -1577,39 +1739,286 @@ static void tgYield() {
  * Uses HTTPS API for sending, WebSocket for receiving messages
  *============================================================================*/
 
-static WiFiClientSecure qqClient;
+static WiFiClientSecure qqHttpClient;
+static WiFiClientSecure qqWsClient;
 bool g_qq_enabled = false;
 static unsigned long qqLastPoll = 0;
 static unsigned long qqLastTokenRefresh = 0;
-static bool qqConnected = false;
 
 /* QQ API endpoints */
-static const char *QQ_API_HOST = "api.q.qq.com";
-static const int   QQ_API_PORT = 443;
-static const char *QQ_WS_HOST = "api.q.qq.com";
-static const int   QQ_WS_PORT = 8080;  /* Or 443 for wss */
+static const char *QQ_TOKEN_HOST = "bots.qq.com";
+static const char *QQ_API_HOST = "api.sgroup.qq.com";
+static const int QQ_API_PORT = 443;
 static char qqGatewayUrl[256] = "";
-static char qqWebSocketUrl[256] = "";
+static char qqWsHost[96] = "";
+static char qqWsPath[192] = "/";
+static uint16_t qqWsPort = 443;
 
 /* WebSocket state */
-enum QqWsState { QQ_WS_DISCONNECTED, QQ_WS_CONNECTING, QQ_WS_CONNECTED, QQ_WS_WAITING };
+enum QqWsState { QQ_WS_DISCONNECTED,
+                 QQ_WS_CONNECTING,
+                 QQ_WS_CONNECTED,
+                 QQ_WS_READY };
 static QqWsState qqWsState = QQ_WS_DISCONNECTED;
 static unsigned long qqWsConnectStart = 0;
 static unsigned long qqLastHeartbeat = 0;
-#define QQ_WS_RECONNECT_DELAY 30000  /* 30s */
-#define QQ_HEARTBEAT_INTERVAL 30000  /* 30s */
+static unsigned long qqHeartbeatInterval = 41250;
+static bool qqHeartbeatAcked = true;
+static int qqLastSeq = -1;
+static char qqSessionId[96] = "";
+#define QQ_WS_RECONNECT_DELAY 30000 /* 30s */
 #define QQ_WS_TIMEOUT 60000         /* 60s */
 
-static char qqWsRxBuf[1024];
+static char qqWsRxBuf[4096];
 static int qqWsRxLen = 0;
 
+enum QqReplyTargetKind {
+    QQ_REPLY_NONE = 0,
+    QQ_REPLY_CHANNEL,
+    QQ_REPLY_DM,
+    QQ_REPLY_GROUP,
+    QQ_REPLY_C2C
+};
+
+struct QqIncomingMessage {
+    char content[256];
+    char eventType[40];
+    char replyTarget[64];
+    QqReplyTargetKind replyKind;
+};
+
+static const uint32_t QQ_INTENT_GUILD_MESSAGES = (1UL << 9);
+static const uint32_t QQ_INTENT_DIRECT_MESSAGE = (1UL << 12);
+static const uint32_t QQ_INTENT_GROUP_AND_C2C_EVENT = (1UL << 25);
+static const uint32_t QQ_INTENT_PUBLIC_GUILD_MESSAGES = (1UL << 30);
+static const uint32_t QQ_DEFAULT_INTENTS =
+    QQ_INTENT_GUILD_MESSAGES |
+    QQ_INTENT_DIRECT_MESSAGE |
+    QQ_INTENT_GROUP_AND_C2C_EVENT |
+    QQ_INTENT_PUBLIC_GUILD_MESSAGES;
+
 /**
- * Get Access Token from QQ API
- * POST https://api.q.qq.com/api/getToken?grant_type=client_credential&appid=APPID&secret=APPSECRET
+ * 从 QQ HTTPS 接口读取 HTTP 响应到缓冲区中。
+ *
+ * 当对端关闭、超时或缓冲区写满时读取结束。
+ * 结果始终会补上结尾空字符。
+ */
+static int qqReadHttpResponse(WiFiClientSecure &client, char *buf, int bufSize,
+                              unsigned long timeoutMs = 10000) {
+    int len = 0;
+    unsigned long start = millis();
+    while ((millis() - start) < timeoutMs) {
+        bool gotData = false;
+        while (client.available() && len < bufSize - 1) {
+            buf[len++] = client.read();
+            gotData = true;
+        }
+        if (len >= bufSize - 1) break;
+        if (!client.connected() && !client.available()) break;
+        if (!gotData) delay(1);
+    }
+    buf[len] = '\0';
+    return len;
+}
+
+/** 返回原始 HTTP 响应缓冲区中响应体部分的指针。 */
+static const char *qqHttpBody(const char *resp) {
+    const char *body = strstr(resp, "\r\n\r\n");
+    return body ? body + 4 : resp;
+}
+
+/** 检查原始 HTTP 响应是否包含 2xx 状态码。 */
+static bool qqHttpStatusOk(const char *resp) {
+    const char *p = strchr(resp, ' ');
+    if (!p) return false;
+    int status = atoi(p + 1);
+    return status >= 200 && status < 300;
+}
+
+/**
+ * 从 QQ API 返回的 JSON 载荷中提取字符串字段。
+ *
+ * 这是一个小型、无动态分配的解析器，只面向 QQ gateway 与 REST
+ * 返回里实际会用到的那部分 JSON 结构。
+ */
+static bool qqJsonExtractString(const char *json, const char *key,
+                                char *dst, int dstLen) {
+    char pattern[32];
+    snprintf(pattern, sizeof(pattern), "\"%s\":", key);
+    const char *p = strstr(json, pattern);
+    if (!p) return false;
+    p += strlen(pattern);
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    if (*p != '"') return false;
+    p++;
+
+    int w = 0;
+    while (*p && *p != '"' && w < dstLen - 1) {
+        if (*p == '\\' && *(p + 1)) {
+            p++;
+            if (*p == 'n') {
+                dst[w++] = '\n';
+            } else if (*p == 'r') {
+                dst[w++] = '\r';
+            } else if (*p == 't') {
+                dst[w++] = '\t';
+            } else {
+                dst[w++] = *p;
+            }
+            p++;
+            continue;
+        }
+        dst[w++] = *p++;
+    }
+    dst[w] = '\0';
+    return w > 0;
+}
+
+/** 从 QQ JSON 载荷中提取整数值；若不存在则返回 `fallback`。 */
+static int qqJsonExtractInt(const char *json, const char *key, int fallback) {
+    char pattern[32];
+    snprintf(pattern, sizeof(pattern), "\"%s\":", key);
+    const char *p = strstr(json, pattern);
+    if (!p) return fallback;
+    p += strlen(pattern);
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    return atoi(p);
+}
+
+/**
+ * 向 QQ gateway 发送一个带掩码的 WebSocket 帧。
+ *
+ * WebSocket 协议要求客户端发往服务端的数据带掩码，
+ * 因此这里会构造帧头、应用随机 mask 并写入网络连接。
+ */
+static bool qqWsSendFrame(uint8_t opcode, const uint8_t *payload, size_t len) {
+    if (!qqWsClient.connected()) return false;
+    if (len > 65535) return false;
+
+    uint8_t header[8];
+    size_t headerLen = 0;
+    header[headerLen++] = 0x80 | (opcode & 0x0F);
+    if (len < 126) {
+        header[headerLen++] = 0x80 | (uint8_t)len;
+    } else {
+        header[headerLen++] = 0x80 | 126;
+        header[headerLen++] = (uint8_t)((len >> 8) & 0xFF);
+        header[headerLen++] = (uint8_t)(len & 0xFF);
+    }
+
+    uint32_t mask = esp_random();
+    uint8_t maskBytes[4] = {
+        (uint8_t)((mask >> 24) & 0xFF),
+        (uint8_t)((mask >> 16) & 0xFF),
+        (uint8_t)((mask >> 8) & 0xFF),
+        (uint8_t)(mask & 0xFF),
+    };
+
+    if (qqWsClient.write(header, headerLen) != (int)headerLen) return false;
+    if (qqWsClient.write(maskBytes, sizeof(maskBytes)) != (int)sizeof(maskBytes)) return false;
+
+    for (size_t i = 0; i < len; i++) {
+        uint8_t b = payload[i] ^ maskBytes[i & 3];
+        if (qqWsClient.write(&b, 1) != 1) return false;
+    }
+    return true;
+}
+
+/** 向 QQ gateway 发送文本 WebSocket 帧。 */
+static bool qqWsSendText(const char *text) {
+    return qqWsSendFrame(0x1, (const uint8_t *)text, strlen(text));
+}
+
+/** 在收到服务端 ping 后发送 WebSocket pong 帧。 */
+static bool qqWsSendPong(const uint8_t *payload, size_t len) {
+    return qqWsSendFrame(0xA, payload, len);
+}
+
+/**
+ * 带着最近一次看到的序列号向 QQ gateway 发送心跳。
+ *
+ * 如果心跳确认缺失，会被视为连接已失效，并在 `qqTick()` 中触发重连。
+ */
+static bool qqWsSendHeartbeat() {
+    char payload[64];
+    if (qqLastSeq >= 0) {
+        snprintf(payload, sizeof(payload), "{\"op\":1,\"d\":%d}", qqLastSeq);
+    } else {
+        snprintf(payload, sizeof(payload), "{\"op\":1,\"d\":null}");
+    }
+    if (!qqWsSendText(payload)) {
+        return false;
+    }
+    qqLastHeartbeat = millis();
+    qqHeartbeatAcked = false;
+    if (g_debug) Serial.printf("[QQ] -> heartbeat seq=%d\n", qqLastSeq);
+    return true;
+}
+
+/**
+ * 关闭当前 QQ WebSocket 会话并重置运行时状态。
+ *
+ * 如果提供了断开原因就会记录日志，同时重连计时器也会从当前时刻重新开始。
+ */
+static void qqWsDisconnect(const char *reason) {
+    if (reason && *reason) {
+        Serial.printf("[QQ] WS disconnect: %s\n", reason);
+    }
+    qqWsClient.stop();
+    qqWsState = QQ_WS_DISCONNECTED;
+    qqWsRxLen = 0;
+    qqHeartbeatAcked = true;
+    qqHeartbeatInterval = 41250;
+    qqLastHeartbeat = 0;
+    qqWsConnectStart = 0;
+    qqLastPoll = millis();
+}
+
+/**
+ * 将 QQ 返回的 gateway URL 解析为 host、path 和 port。
+ *
+ * 这里同时支持 `ws://` 和 `wss://`，
+ * 从而让传输层连接逻辑无需依赖完整 URL 解析器。
+ */
+static bool qqParseGatewayUrl() {
+    const char *url = qqGatewayUrl;
+    bool secure = false;
+    if (strncmp(url, "wss://", 6) == 0) {
+        secure = true;
+        url += 6;
+    } else if (strncmp(url, "ws://", 5) == 0) {
+        url += 5;
+    } else {
+        return false;
+    }
+
+    const char *path = strchr(url, '/');
+    const char *portSep = strchr(url, ':');
+    if (!path) path = url + strlen(url);
+
+    qqWsPort = secure ? 443 : 80;
+    int hostLen = path - url;
+    if (portSep && portSep < path) {
+        hostLen = portSep - url;
+        qqWsPort = atoi(portSep + 1);
+    }
+    if (hostLen <= 0 || hostLen >= (int)sizeof(qqWsHost)) return false;
+
+    memcpy(qqWsHost, url, hostLen);
+    qqWsHost[hostLen] = '\0';
+    strncpy(qqWsPath, *path ? path : "/", sizeof(qqWsPath) - 1);
+    qqWsPath[sizeof(qqWsPath) - 1] = '\0';
+    return true;
+}
+
+/**
+ * 获取或复用 QQ bot 的访问令牌，供 REST 与 gateway 共用。
+ *
+ * 令牌会缓存到临近过期前，避免每次发消息或重连时都重新刷新。
  */
 static bool qqGetAccessToken() {
     unsigned long now = millis();
-    
+
     /* Check if token is still valid */
     if (cfg_qq_access_token[0] != '\0' && now < cfg_qq_token_expires) {
         return true;
@@ -1617,43 +2026,48 @@ static bool qqGetAccessToken() {
 
     Serial.printf("[QQ] Refreshing access token...\n");
 
-    qqClient.stop();
-    if (!qqClient.connect(QQ_API_HOST, QQ_API_PORT)) {
-        Serial.printf("[QQ] Failed to connect to API\n");
+    qqHttpClient.stop();
+    if (!qqHttpClient.connect(QQ_TOKEN_HOST, QQ_API_PORT)) {
+        Serial.printf("[QQ] Failed to connect to token API\n");
         return false;
+    } else {
+        Serial.printf("[QQ] Connected to token API\n");
     }
 
-    char path[256];
-    snprintf(path, sizeof(path),
-        "GET /api/getToken?grant_type=client_credential&appid=%s&secret=%s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Connection: close\r\n\r\n",
-        cfg_qq_app_id, cfg_qq_app_secret, QQ_API_HOST);
+    char body[160];
+    snprintf(body, sizeof(body),
+             "{\"appId\":\"%s\",\"clientSecret\":\"%s\"}",
+             cfg_qq_app_id, cfg_qq_app_secret);
+    char req[512];
+    snprintf(req, sizeof(req),
+             "POST /app/getAppAccessToken HTTP/1.1\r\n"
+             "Host: %s\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %d\r\n"
+             "Connection: close\r\n\r\n"
+             "%s",
+             QQ_TOKEN_HOST, strlen(body), body);
+    qqHttpClient.print(req);
 
-    qqClient.print(path);
-
-    /* Read response */
-    unsigned long start = millis();
     static char resp[512];
-    int len = 0;
-    while (qqClient.connected() && (millis() - start) < 10000) {
-        if (qqClient.available()) {
-            resp[len++] = qqClient.read();
-            if (len >= sizeof(resp) - 1) break;
-        }
-    }
-    qqClient.stop();
-    resp[len] = '\0';
+    qqReadHttpResponse(qqHttpClient, resp, sizeof(resp));
+    qqHttpClient.stop();
 
     /* Parse JSON response */
     /* Expected: {"access_token":"xxx","expires_in":86400} */
-    const char *token = strstr(resp, "\"access_token\":\"");
+    const char *bodyResp = qqHttpBody(resp);
+    const char *token = strstr(bodyResp, "\"access_token\":\"");
     if (!token) {
-        Serial.printf("[QQ] Failed to parse token response\n");
+        const char *err = strstr(bodyResp, "Trpc-Error-Msg");
+        if (err) {
+            Serial.printf("[QQ] Token API error: %.180s\n", err);
+        } else {
+            Serial.printf("[QQ] Failed to parse token response body: %.180s\n", bodyResp);
+        }
         return false;
     }
     token += 16;
-    
+
     int i = 0;
     while (*token && *token != '"' && i < 127) {
         cfg_qq_access_token[i++] = *token++;
@@ -1661,11 +2075,11 @@ static bool qqGetAccessToken() {
     cfg_qq_access_token[i] = '\0';
 
     /* Parse expires_in */
-    const char *expires = strstr(resp, "\"expires_in\":");
+    const char *expires = strstr(bodyResp, "\"expires_in\":");
     if (expires) {
-        cfg_qq_token_expires = now + (atoi(expires + 12) - 300) * 1000UL;  /* Buffer 5 min */
+        cfg_qq_token_expires = now + (atoi(expires + 12) - 300) * 1000UL; /* Buffer 5 min */
     } else {
-        cfg_qq_token_expires = now + 24 * 3600 * 1000UL;  /* Default 24h */
+        cfg_qq_token_expires = now + 24 * 3600 * 1000UL; /* Default 24h */
     }
 
     qqLastTokenRefresh = now;
@@ -1673,63 +2087,56 @@ static bool qqGetAccessToken() {
     return true;
 }
 
-/**
- * Get WebSocket Gateway URL
- */
+/** 通过 QQ REST API 查询当前的 gateway WebSocket 地址。 */
 static bool qqGetGateway() {
     if (!qqGetAccessToken()) return false;
 
-    qqClient.stop();
-    if (!qqClient.connect(QQ_API_HOST, QQ_API_PORT)) {
+    qqHttpClient.stop();
+    if (!qqHttpClient.connect(QQ_API_HOST, QQ_API_PORT)) {
+        Serial.printf("[QQ] Gateway connect failed\n");
         return false;
     }
 
     char path[384];
     snprintf(path, sizeof(path),
-        "GET /api/gateway?access_token=%s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Connection: close\r\n\r\n",
-        cfg_qq_access_token, QQ_API_HOST);
+             "GET /gateway HTTP/1.1\r\n"
+             "Host: %s\r\n"
+             "Authorization: QQBot %s\r\n"
+             "Connection: close\r\n\r\n",
+             QQ_API_HOST, cfg_qq_access_token);
 
-    qqClient.print(path);
+    qqHttpClient.print(path);
 
-    /* Read response */
-    static char resp[512];
-    int len = 0;
-    unsigned long start = millis();
-    while (qqClient.connected() && (millis() - start) < 10000) {
-        if (qqClient.available()) {
-            resp[len++] = qqClient.read();
-            if (len >= sizeof(resp) - 1) break;
-        }
+    static char resp[1500];
+    qqReadHttpResponse(qqHttpClient, resp, sizeof(resp));
+    qqHttpClient.stop();
+    if (!qqHttpStatusOk(resp)) {
+        Serial.printf("[QQ] Gateway HTTP failed: %.120s\n", resp);
+        return false;
     }
-    qqClient.stop();
-    resp[len] = '\0';
-
     /* Parse URL from response: {"url":"wss://.../gateway"} */
-    const char *url = strstr(resp, "\"url\":\"");
-    if (!url) return false;
-    url += 7;
-
-    int i = 0;
-    while (*url && *url != '"' && i < 255) {
-        qqGatewayUrl[i++] = *url++;
+    const char *bodyResp = qqHttpBody(resp);
+    if (!qqJsonExtractString(bodyResp, "url", qqGatewayUrl, sizeof(qqGatewayUrl))) {
+        Serial.printf("[QQ] Gateway parse failed, body: %.180s\n", bodyResp);
+        return false;
     }
-    qqGatewayUrl[i] = '\0';
 
     Serial.printf("[QQ] Gateway: %s\n", qqGatewayUrl);
     return true;
 }
 
 /**
- * Send message via QQ API
- * POST https://api.q.qq.com/api/CHANNEL_ID/messages
+ * 使用任意 REST 路径模板发送 QQ 消息。
+ *
+ * 上层辅助函数会复用这里的 JSON 序列化与 HTTP 发送逻辑，
+ * 以支持频道、私信、群聊和 C2C 等不同消息接口。
  */
-static bool qqSendMessage(const char *channel_id, const char *content) {
+static bool qqSendMessageRaw(const char *pathFmt, const char *target_id,
+                             const char *content) {
     if (!qqGetAccessToken()) return false;
 
-    qqClient.stop();
-    if (!qqClient.connect(QQ_API_HOST, QQ_API_PORT)) {
+    qqHttpClient.stop();
+    if (!qqHttpClient.connect(QQ_API_HOST, QQ_API_PORT)) {
         Serial.printf("[QQ] Send: connect failed\n");
         return false;
     }
@@ -1737,7 +2144,7 @@ static bool qqSendMessage(const char *channel_id, const char *content) {
     /* Build JSON body */
     static char body[512];
     static char escaped[512];
-    
+
     /* Simple JSON escape */
     int j = 0;
     for (int i = 0; content[i] && j < 500; i++) {
@@ -1755,322 +2162,482 @@ static bool qqSendMessage(const char *channel_id, const char *content) {
     escaped[j] = '\0';
 
     snprintf(body, sizeof(body),
-        "{\"content\":\"%s\"}", escaped);
+             "{\"content\":\"%s\"}", escaped);
 
-    char path[384];
-    snprintf(path, sizeof(path),
-        "POST /api/v1/channels/%s/messages?access_token=%s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: %d\r\n"
-        "Connection: close\r\n\r\n%s",
-        channel_id, cfg_qq_access_token, QQ_API_HOST, strlen(body), body);
+    char req[512];
+    char apiPath[128];
+    snprintf(apiPath, sizeof(apiPath), pathFmt, target_id);
+    snprintf(req, sizeof(req),
+             "POST %s HTTP/1.1\r\n"
+             "Host: %s\r\n"
+             "Authorization: QQBot %s\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %d\r\n"
+             "Connection: close\r\n\r\n%s",
+             apiPath, QQ_API_HOST, cfg_qq_access_token, strlen(body), body);
 
-    qqClient.print(path);
+    qqHttpClient.print(req);
 
-    /* Read response */
-    static char resp[256];
-    int len = 0;
-    unsigned long start = millis();
-    while (qqClient.connected() && (millis() - start) < 10000) {
-        if (qqClient.available()) {
-            resp[len++] = qqClient.read();
-            if (len >= sizeof(resp) - 1) break;
-        }
-    }
-    qqClient.stop();
-    resp[len] = '\0';
+    static char resp[512];
+    qqReadHttpResponse(qqHttpClient, resp, sizeof(resp));
+    qqHttpClient.stop();
 
     /* Check for success */
-    if (strstr(resp, "\"id\":") || strstr(resp, "\"msg_id\":")) {
+    const char *bodyResp = qqHttpBody(resp);
+    if (qqHttpStatusOk(resp) &&
+        (strstr(bodyResp, "\"id\":") || strstr(bodyResp, "\"msg_id\":"))) {
         return true;
     }
 
-    Serial.printf("[QQ] Send failed: %.100s\n", resp);
+    Serial.printf("[QQ] Send failed (%s): %.120s\n", target_id, bodyResp);
     return false;
 }
 
+/** 向 QQ 频道发送消息。 */
+bool qqSendMessage(const char *channel_id, const char *content) {
+    return qqSendMessageRaw("/api/v1/channels/%s/messages", channel_id, content);
+}
+
+/** 向 QQ 群会话发送消息。 */
+static bool qqSendGroupMessage(const char *group_openid, const char *content) {
+    return qqSendMessageRaw("/v2/groups/%s/messages", group_openid, content);
+}
+
+/** 发送与 QQ guild 会话关联的私信消息。 */
+static bool qqSendDmMessage(const char *guild_id, const char *content) {
+    return qqSendMessageRaw("/dms/%s/messages", guild_id, content);
+}
+
+/** 发送一对一 QQ C2C 消息。 */
+static bool qqSendC2cMessage(const char *user_openid, const char *content) {
+    return qqSendMessageRaw("/v2/users/%s/messages", user_openid, content);
+}
+
 /**
- * Parse WebSocket message from QQ Gateway
+ * 根据消息来源，把回复路由到正确的 QQ 发送通道。
+ *
+ * gateway 对频道、群聊、私信和 C2C 使用的标识不同，
+ * 所以这里集中处理回复分发逻辑。
  */
-static void qqParseWsMessage(const char *data, int len) {
-    /* Simple parsing - look for message events */
-    const char *evt = strstr(data, "\"t\":\"");
-    if (!evt) return;
-    evt += 5;
+static bool qqReplyMessage(QqReplyTargetKind kind, const char *targetId,
+                           const char *content) {
+    if (!targetId || targetId[0] == '\0') return false;
+    switch (kind) {
+        case QQ_REPLY_CHANNEL:
+            return qqSendMessage(targetId, content);
+        case QQ_REPLY_DM:
+            return qqSendDmMessage(targetId, content);
+        case QQ_REPLY_GROUP:
+            return qqSendGroupMessage(targetId, content);
+        case QQ_REPLY_C2C:
+            return qqSendC2cMessage(targetId, content);
+        default:
+            return false;
+    }
+}
 
-    /* Check for message types */
-    if (strncmp(evt, "MESSAGE", 8) == 0) {
-        /* Extract message content */
-        const char *content = strstr(data, "\"content\":\"");
-        if (!content) return;
-        content += 11;
+/**
+ * 将 QQ gateway 事件转换成统一的入站消息结构。
+ *
+ * 只有携带聊天内容的事件才会被映射；
+ * 不支持的事件会返回 `false`，由调用方直接忽略。
+ */
+static bool qqParseIncomingMessage(const char *eventType, const char *data,
+                                   QqIncomingMessage *msg) {
+    memset(msg, 0, sizeof(*msg));
+    strncpy(msg->eventType, eventType, sizeof(msg->eventType) - 1);
+    if (!qqJsonExtractString(data, "content", msg->content, sizeof(msg->content))) {
+        return false;
+    }
 
-        static char msgBuf[256];
-        int i = 0;
-        while (*content && *content != '"' && i < 255) {
-            if (*content == '\\' && *(content + 1)) {
-                content++;
-                if (*content == 'n') msgBuf[i++] = '\n';
-                else msgBuf[i++] = *content;
-            } else {
-                msgBuf[i++] = *content;
+    if (strcmp(eventType, "AT_MESSAGE_CREATE") == 0 ||
+        strcmp(eventType, "MESSAGE_CREATE") == 0) {
+        msg->replyKind = QQ_REPLY_CHANNEL;
+        qqJsonExtractString(data, "channel_id", msg->replyTarget, sizeof(msg->replyTarget));
+    } else if (strcmp(eventType, "DIRECT_MESSAGE_CREATE") == 0) {
+        msg->replyKind = QQ_REPLY_DM;
+        qqJsonExtractString(data, "guild_id", msg->replyTarget, sizeof(msg->replyTarget));
+    } else if (strcmp(eventType, "GROUP_AT_MESSAGE_CREATE") == 0) {
+        msg->replyKind = QQ_REPLY_GROUP;
+        qqJsonExtractString(data, "group_openid", msg->replyTarget, sizeof(msg->replyTarget));
+    } else if (strcmp(eventType, "C2C_MESSAGE_CREATE") == 0) {
+        msg->replyKind = QQ_REPLY_C2C;
+        const char *authorId = strstr(data, "\"author\":{\"id\":\"");
+        if (authorId) {
+            authorId += 16;
+            int w = 0;
+            while (authorId[w] && authorId[w] != '"' && w < (int)sizeof(msg->replyTarget) - 1) {
+                msg->replyTarget[w] = authorId[w];
+                w++;
             }
-            content++;
+            msg->replyTarget[w] = '\0';
         }
-        msgBuf[i] = '\0';
+        if (msg->replyTarget[0] == '\0') {
+            qqJsonExtractString(data, "author_openid", msg->replyTarget, sizeof(msg->replyTarget));
+        }
+        if (msg->replyTarget[0] == '\0') {
+            qqJsonExtractString(data, "openid", msg->replyTarget, sizeof(msg->replyTarget));
+        }
+    }
+    return msg->content[0] != '\0';
+}
 
-        if (i == 0) return;
+/**
+ * 将已解析的 QQ 消息作为命令或普通聊天来处理。
+ *
+ * 回复会通过该消息原本进入的同类通道发回去。
+ */
+static void qqHandleIncomingMessage(const QqIncomingMessage *msg) {
+    Serial.printf("\n[QQ] %s: %s\n", msg->eventType, msg->content);
 
-        /* Extract channel_id for reply */
-        const char *chan = strstr(data, "\"channel_id\":\"");
-        static char channelId[32] = "";
-        if (chan) {
-            chan += 14;
-            int ci = 0;
-            while (*chan && *chan != '"' && ci < 31) {
-                channelId[ci++] = *chan++;
-            }
-            channelId[ci] = '\0';
+    if (msg->content[0] == '/') {
+        const char *cmd = msg->content + 1;
+        static char cmdCopy[64];
+        strncpy(cmdCopy, cmd, sizeof(cmdCopy) - 1);
+        cmdCopy[sizeof(cmdCopy) - 1] = '\0';
+        char *space = strchr(cmdCopy, ' ');
+        if (space) *space = '\0';
+
+        if (handleCommand(cmdCopy, cmdResponseBuf, sizeof(cmdResponseBuf))) {
+            Serial.printf("[QQ] cmd: /%s -> %s\n", cmdCopy, cmdResponseBuf);
+        } else {
+            snprintf(cmdResponseBuf, sizeof(cmdResponseBuf), "Unknown command: /%s", cmdCopy);
         }
 
-        Serial.printf("\n[QQ] Message: %s\n", msgBuf);
+        if (msg->replyKind != QQ_REPLY_NONE && msg->replyTarget[0] != '\0') {
+            qqReplyMessage(msg->replyKind, msg->replyTarget, cmdResponseBuf);
+        }
+        return;
+    }
 
-        /* Check for commands */
-        if (msgBuf[0] == '/') {
-            const char *cmd = msgBuf + 1;
-            static char cmdCopy[64];
-            strncpy(cmdCopy, cmd, sizeof(cmdCopy) - 1);
-            cmdCopy[sizeof(cmdCopy) - 1] = '\0';
-            char *space = strchr(cmdCopy, ' ');
-            if (space) *space = '\0';
+    tgYield();
+    const char *response = chatWithLLM(msg->content);
+    if (response && msg->replyKind != QQ_REPLY_NONE && msg->replyTarget[0] != '\0') {
+        qqReplyMessage(msg->replyKind, msg->replyTarget, response);
+    }
+}
 
-            if (handleCommand(cmdCopy, cmdResponseBuf, sizeof(cmdResponseBuf))) {
-                Serial.printf("[QQ] cmd: /%s -> %s\n", cmdCopy, cmdResponseBuf);
-                if (channelId[0]) {
-                    qqSendMessage(channelId, cmdResponseBuf);
-                }
-            } else {
-                snprintf(cmdResponseBuf, sizeof(cmdResponseBuf),
-                    "Unknown command: /%s", cmdCopy);
-                if (channelId[0]) {
-                    qqSendMessage(channelId, cmdResponseBuf);
-                }
+/**
+ * 在收到 QQ gateway 的 HELLO 事件后发送初始 IDENTIFY 载荷。
+ *
+ * 这样会把 WebSocket 会话从“已连接”推进到“已鉴权”，
+ * 使 bot 可以开始接收后续分发事件。
+ */
+static bool qqSendIdentify() {
+    char identify[256];
+    snprintf(identify, sizeof(identify),
+             "{\"op\":2,\"d\":{\"token\":\"QQBot %s\",\"intents\":%lu,"
+             "\"properties\":{\"$os\":\"linux\",\"$browser\":\"wireclaw\",\"$device\":\"wireclaw\"}}}",
+             cfg_qq_access_token, (unsigned long)QQ_DEFAULT_INTENTS);
+    if (!qqWsSendText(identify)) {
+        Serial.printf("[QQ] IDENTIFY send failed\n");
+        return false;
+    }
+    qqWsState = QQ_WS_CONNECTED;
+    if (g_debug) Serial.printf("[QQ] -> identify intents=%lu\n", (unsigned long)QQ_DEFAULT_INTENTS);
+    return true;
+}
+
+/**
+ * 处理已经解码完成的 QQ gateway JSON 载荷。
+ *
+ * 该处理器会根据 opcode 和事件类型，更新序列号、连接状态、
+ * 心跳时序以及聊天分发逻辑。
+ */
+static void qqHandleGatewayPayload(const char *data) {
+    int seq = qqJsonExtractInt(data, "s", -1);
+    if (seq >= 0) qqLastSeq = seq;
+
+    int op = qqJsonExtractInt(data, "op", -1);
+    switch (op) {
+        case 10: {
+            int interval = qqJsonExtractInt(data, "heartbeat_interval", 41250);
+            if (interval > 1000) qqHeartbeatInterval = (unsigned long)interval;
+            qqHeartbeatAcked = true;
+            qqLastHeartbeat = millis();
+            Serial.printf("[QQ] <- hello interval=%lu ms\n", qqHeartbeatInterval);
+            if (!qqSendIdentify()) {
+                qqWsDisconnect("identify failed");
             }
             return;
         }
+        case 11:
+            qqHeartbeatAcked = true;
+            if (g_debug) Serial.printf("[QQ] <- heartbeat ack\n");
+            return;
+        case 7:
+            qqWsDisconnect("server requested reconnect");
+            return;
+        case 9:
+            qqSessionId[0] = '\0';
+            qqLastSeq = -1;
+            qqWsDisconnect("invalid session");
+            return;
+        case 0:
+            break;
+        default:
+            if (g_debug) Serial.printf("[QQ] <- op=%d payload=%.120s\n", op, data);
+            return;
+    }
 
-        /* Run chat */
-        tgYield();
-        const char *response = chatWithLLM(msgBuf);
+    char eventType[40];
+    if (!qqJsonExtractString(data, "t", eventType, sizeof(eventType))) {
+        return;
+    }
 
-        if (response && channelId[0]) {
-            qqSendMessage(channelId, response);
-        }
+    if (strcmp(eventType, "READY") == 0) {
+        qqJsonExtractString(data, "session_id", qqSessionId, sizeof(qqSessionId));
+        qqWsState = QQ_WS_READY;
+        Serial.printf("[QQ] READY session=%s\n", qqSessionId[0] ? qqSessionId : "<none>");
+        return;
+    }
+
+    if (strcmp(eventType, "RESUMED") == 0) {
+        qqWsState = QQ_WS_READY;
+        Serial.printf("[QQ] RESUMED\n");
+        return;
+    }
+
+    QqIncomingMessage msg;
+    if (qqParseIncomingMessage(eventType, data, &msg)) {
+        qqHandleIncomingMessage(&msg);
+    } else if (g_debug) {
+        Serial.printf("[QQ] Ignored event %s\n", eventType);
     }
 }
 
 /**
- * WebSocket frame receive (simplified)
+ * 消费并解码网络缓冲区中的 QQ WebSocket 帧。
+ *
+ * 文本帧会被当成 gateway JSON 载荷处理；
+ * 控制帧则用于驱动 ping/pong 和连接断开逻辑。
  */
 static void qqWsProcess() {
-    if (!qqClient.available()) return;
+    if (!qqWsClient.available()) return;
 
     /* Read available data */
-    while (qqClient.available() && qqWsRxLen < sizeof(qqWsRxBuf) - 1) {
-        qqWsRxBuf[qqWsRxLen++] = qqClient.read();
+    while (qqWsClient.available() && qqWsRxLen < sizeof(qqWsRxBuf) - 1) {
+        qqWsRxBuf[qqWsRxLen++] = qqWsClient.read();
     }
-    qqWsRxBuf[qqWsRxLen] = '\0';
 
-    /* Look for message frame (text opcode = 0x81) */
-    for (int i = 0; i < qqWsRxLen - 1; i++) {
-        if ((uint8_t)qqWsRxBuf[i] == 0x81) {
-            /* Text frame */
-            int payload_len = qqWsRxBuf[i + 1] & 0x7F;
-            int offset = 2;
-            
-            /* Extended payload length */
-            if (payload_len == 126) {
-                payload_len = ((uint8_t)qqWsRxBuf[i + 2] << 8) | (uint8_t)qqWsRxBuf[i + 3];
-                offset = 4;
-            } else if (payload_len == 127) {
-                offset = 10;  /* Skip 8-byte length */
+    if (qqWsRxLen >= (int)sizeof(qqWsRxBuf) - 1) {
+        qqWsDisconnect("rx buffer overflow");
+        return;
+    }
+
+    while (qqWsRxLen >= 2) {
+        const uint8_t *buf = (const uint8_t *)qqWsRxBuf;
+        bool masked = (buf[1] & 0x80) != 0;
+        uint64_t payloadLen = buf[1] & 0x7F;
+        int headerLen = 2;
+
+        if (payloadLen == 126) {
+            if (qqWsRxLen < 4) return;
+            payloadLen = ((uint16_t)buf[2] << 8) | buf[3];
+            headerLen = 4;
+        } else if (payloadLen == 127) {
+            if (qqWsRxLen < 10) return;
+            payloadLen = 0;
+            for (int i = 0; i < 8; i++) {
+                payloadLen = (payloadLen << 8) | buf[2 + i];
             }
+            headerLen = 10;
+        }
 
-            if (i + offset + payload_len <= qqWsRxLen) {
-                static char msg[512];
-                int msg_len = payload_len < 511 ? payload_len : 511;
-                memcpy(msg, &qqWsRxBuf[i + offset], msg_len);
-                msg[msg_len] = '\0';
+        if (masked) headerLen += 4;
+        if ((uint64_t)qqWsRxLen < (uint64_t)headerLen + payloadLen) return;
 
-                /* Shift buffer */
-                memmove(qqWsRxBuf, &qqWsRxBuf[i + offset + payload_len],
-                        qqWsRxLen - i - offset - payload_len);
-                qqWsRxLen -= i + offset + payload_len;
+        uint8_t opcode = buf[0] & 0x0F;
+        const uint8_t *payload = buf + headerLen;
+        uint8_t maskBytes[4] = {0, 0, 0, 0};
+        if (masked) {
+            memcpy(maskBytes, buf + headerLen - 4, 4);
+        }
 
-                qqParseWsMessage(msg, msg_len);
-                i = -1;  /* Restart search */
-            }
+        static uint8_t framePayload[2048];
+        size_t copyLen = payloadLen < sizeof(framePayload) - 1 ? (size_t)payloadLen : sizeof(framePayload) - 1;
+        for (size_t i = 0; i < copyLen; i++) {
+            framePayload[i] = masked ? (payload[i] ^ maskBytes[i & 3]) : payload[i];
+        }
+        framePayload[copyLen] = '\0';
+
+        int consumed = headerLen + (int)payloadLen;
+        memmove(qqWsRxBuf, qqWsRxBuf + consumed, qqWsRxLen - consumed);
+        qqWsRxLen -= consumed;
+
+        if (opcode == 0x1) {
+            qqHandleGatewayPayload((const char *)framePayload);
+        } else if (opcode == 0x8) {
+            qqWsDisconnect("close frame");
+            return;
+        } else if (opcode == 0x9) {
+            qqWsSendPong(framePayload, copyLen);
+        } else if (opcode == 0xA) {
+            if (g_debug) Serial.printf("[QQ] <- pong\n");
+        } else if (g_debug) {
+            Serial.printf("[QQ] Ignored opcode=%u len=%u\n", opcode, (unsigned)payloadLen);
         }
     }
 }
 
 /**
- * Connect to QQ WebSocket Gateway
+ * 打开 QQ gateway WebSocket，并完成 HTTP Upgrade 握手。
+ *
+ * 握手成功后，代码会先等待 HELLO 事件，再发送 IDENTIFY，
+ * 以符合 gateway 的协议流程。
  */
 static bool qqWsConnect() {
     if (qqGatewayUrl[0] == '\0') {
         if (!qqGetGateway()) return false;
     }
+    if (!qqParseGatewayUrl()) {
+        Serial.printf("[QQ] Invalid gateway URL: %s\n", qqGatewayUrl);
+        return false;
+    }
 
     Serial.printf("[QQ] Connecting to WebSocket...\n");
 
-    qqClient.stop();
-    if (!qqClient.connect(QQ_WS_HOST, QQ_WS_PORT)) {
+    qqWsClient.stop();
+    qqWsRxLen = 0;
+    delay(50);
+    if (!qqWsClient.connect(qqWsHost, qqWsPort)) {
         Serial.printf("[QQ] WS connect failed\n");
         return false;
+    } else {
+        Serial.printf("[QQ] WS connect success\n");
     }
 
     /* Build WebSocket handshake request */
     static char wsReq[512];
     snprintf(wsReq, sizeof(wsReq),
-        "GET %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        "Sec-WebSocket-Version: 13\r\n"
-        "Sec-WebSocket-Key: QQBotClient1234567890ab\r\n"
-        "\r\n",
-        qqGatewayUrl[0] == 's' ? qqGatewayUrl + 8 : qqGatewayUrl,
-        QQ_WS_HOST);
+             "GET %s HTTP/1.1\r\n"
+             "Host: %s\r\n"
+             "Upgrade: websocket\r\n"
+             "Connection: Upgrade\r\n"
+             "Sec-WebSocket-Version: 13\r\n"
+             "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+             "\r\n",
+             qqWsPath,
+             qqWsHost);
 
-    qqClient.print(wsReq);
+    qqWsClient.print(wsReq);
+    qqWsState = QQ_WS_CONNECTING;
+    qqWsConnectStart = millis();
 
     /* Wait for handshake response */
     unsigned long start = millis();
-    static char resp[256];
+    static char resp[1024];
     int len = 0;
-    while (qqClient.connected() && (millis() - start) < 10000) {
-        if (qqClient.available()) {
-            resp[len++] = qqClient.read();
+    while (qqWsClient.connected() && (millis() - start) < 10000) {
+        if (qqWsClient.available()) {
+            resp[len++] = qqWsClient.read();
+            if (len >= (int)sizeof(resp) - 1) break;
             if (len > 4 && strstr(resp, "\r\n\r\n")) break;
         }
     }
     resp[len] = '\0';
-
+    Serial.printf("[QQ] WebSocket Handshake Resp:%s\n",resp);
     if (!strstr(resp, "101")) {
-        Serial.printf("[QQ] WS handshake failed\n");
-        qqClient.stop();
+        Serial.printf("[QQ] WS handshake failed: %s\n", resp);
+        qqWsClient.stop();
         return false;
     }
-
-    /* Send IDENTIFY with token */
-    static char identify[256];
-    snprintf(identify, sizeof(identify),
-        "\x82\x7F"  /* Text frame, 127 bytes */
-        "{\"op\":2,\"d\":{\"token\":\"%s\",\"intents\":513}}",  /* 513 = GUILD_MESSAGES + DIRECT_MESSAGES */
-        cfg_qq_access_token);
-
-    /* Simplified: just send as regular text */
-    snprintf(identify, sizeof(identify),
-        "{\"op\":2,\"d\":{\"token\":\"%s\",\"intents\":513}}",
-        cfg_qq_access_token);
-    
-    /* Send as WebSocket text frame */
-    qqClient.write((uint8_t)0x81);
-    int idLen = strlen(identify);
-    if (idLen < 126) {
-        qqClient.write((uint8_t)idLen);
-    } else {
-        qqClient.write((uint8_t)126);
-        qqClient.write((uint8_t)(idLen >> 8));
-        qqClient.write((uint8_t)(idLen & 0xFF));
-    }
-    qqClient.print(identify);
-
-    qqWsState = QQ_WS_CONNECTED;
+    qqHeartbeatAcked = true;
+    qqHeartbeatInterval = 41250;
     qqLastHeartbeat = millis();
-    Serial.printf("[QQ] WebSocket connected!\n");
+    Serial.printf("[QQ] WebSocket connected, waiting for HELLO\n");
 
     return true;
 }
 
 /**
- * QQ WebSocket tick - call from loop
+ * 在一次 `loop()` 迭代中推进 QQ 连接状态。
+ *
+ * 该函数负责处理重连时机、令牌可用性、WebSocket I/O、
+ * 心跳调度以及失效连接检测。
  */
 static void qqTick() {
     unsigned long now = millis();
-
     /* Check if we should reconnect */
     if (qqWsState == QQ_WS_DISCONNECTED) {
         if (now - qqLastPoll < QQ_WS_RECONNECT_DELAY) return;
-        if (!qqGetAccessToken()) return;
-        
-        qqWsConnect();
+        if (!qqGetAccessToken()) {
+            if (g_debug) Serial.printf("[QQ] Tick: token unavailable\n");
+            qqLastPoll = now;
+            return;
+        }
+
+        if (!qqWsConnect()) {
+            Serial.printf("[QQ] Tick: WS connect failed, retry in %d ms\n", QQ_WS_RECONNECT_DELAY);
+        }
         qqLastPoll = now;
         return;
     }
 
+    if (qqWsState == QQ_WS_CONNECTING && now - qqWsConnectStart > QQ_WS_TIMEOUT) {
+        qqWsDisconnect("hello timeout");
+        return;
+    }
+
     /* Send heartbeat */
-    if (qqWsState == QQ_WS_CONNECTED && now - qqLastHeartbeat > QQ_HEARTBEAT_INTERVAL) {
-        qqClient.write("\x81\x01\x09");  /* Opcode 9 = PING */
-        qqLastHeartbeat = now;
+    if ((qqWsState == QQ_WS_CONNECTED || qqWsState == QQ_WS_READY) &&
+        now - qqLastHeartbeat > qqHeartbeatInterval) {
+        if (!qqHeartbeatAcked) {
+            qqWsDisconnect("heartbeat ack timeout");
+            return;
+        }
+        if (!qqWsSendHeartbeat()) {
+            qqWsDisconnect("heartbeat send failed");
+            return;
+        }
     }
 
     /* Process incoming data */
-    if (qqWsState == QQ_WS_CONNECTED && qqClient.available()) {
+    if (qqWsState != QQ_WS_DISCONNECTED) {
         qqWsProcess();
     }
 
     /* Check connection status */
-    if (!qqClient.connected() && qqWsState == QQ_WS_CONNECTED) {
+    if (!qqWsClient.connected() && qqWsState != QQ_WS_DISCONNECTED) {
         Serial.printf("[QQ] WebSocket disconnected\n");
-        qqWsState = QQ_WS_DISCONNECTED;
-        qqLastPoll = now;
+        qqWsDisconnect("socket closed");
     }
 }
 
 /**
- * Get bot info - verify connection
+ * 从 QQ 获取基础 bot 身份信息，以校验 access token 是否有效。
+ *
+ * 该响应只在启动阶段用作一次轻量级的连通性与凭据有效性检查。
  */
 static bool qqGetBotInfo() {
     if (!qqGetAccessToken()) return false;
 
-    qqClient.stop();
-    if (!qqClient.connect(QQ_API_HOST, QQ_API_PORT)) {
+    qqHttpClient.stop();
+    if (!qqHttpClient.connect(QQ_API_HOST, QQ_API_PORT)) {
         return false;
     }
 
     char path[256];
     snprintf(path, sizeof(path),
-        "GET /api/v1/users/me?access_token=%s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Connection: close\r\n\r\n",
-        cfg_qq_access_token, QQ_API_HOST);
+             "GET /api/v1/users/me HTTP/1.1\r\n"
+             "Host: %s\r\n"
+             "Authorization: QQBot %s\r\n"
+             "Connection: close\r\n\r\n",
+             QQ_API_HOST, cfg_qq_access_token);
 
-    qqClient.print(path);
+    qqHttpClient.print(path);
 
-    static char resp[256];
-    int len = 0;
-    unsigned long start = millis();
-    while (qqClient.connected() && (millis() - start) < 10000) {
-        if (qqClient.available()) {
-            resp[len++] = qqClient.read();
-            if (len >= sizeof(resp) - 1) break;
-        }
-    }
-    qqClient.stop();
-    resp[len] = '\0';
+    static char resp[512];
+    qqReadHttpResponse(qqHttpClient, resp, sizeof(resp));
+    qqHttpClient.stop();
 
-    return strstr(resp, "\"id\":") != nullptr;
+    return qqHttpStatusOk(resp) && strstr(qqHttpBody(resp), "\"id\":") != nullptr;
 }
 
-/* Release QQ connection */
+/** 释放当前 QQ WebSocket 会话，为 LLM 工作腾出堆内存。 */
 static void qqYield() {
-    if (qqWsState == QQ_WS_CONNECTED) {
-        qqClient.stop();
-        qqWsState = QQ_WS_DISCONNECTED;
-        qqLastPoll = millis();
+    if (qqWsState != QQ_WS_DISCONNECTED) {
+        qqWsDisconnect("yield");
     }
 }
 
@@ -2078,6 +2645,12 @@ static void qqYield() {
  * Serial Commands
  *============================================================================*/
 
+/**
+ * 处理串口控制台收到的一整行输入。
+ *
+ * 某些命令只在串口下提供以方便调试；
+ * 其余输入则转交给共享命令处理器或普通聊天流程。
+ */
 void handleSerialCommand(const char *input) {
     /* Serial-only commands (not available via Telegram/NATS) */
     if (strcmp(input, "/config") == 0) {
@@ -2139,6 +2712,12 @@ void handleSerialCommand(const char *input) {
  * Setup & Loop
  *============================================================================*/
 
+/**
+ * 执行一次性的固件初始化，并启动所有已启用服务。
+ *
+ * 包括加载配置与历史记录、初始化硬件抽象、
+ * 连接网络后端以及启动运行时 Web 配置界面。
+ */
 void setup() {
     Serial.begin(115200);
     delay(5000);
@@ -2188,8 +2767,7 @@ void setup() {
     llm.begin(cfg_api_key, cfg_model, cfg_api_base_url);
 
     /* Watchdog - reconfigure to 60s (Arduino already inits WDT at 5s) */
-    esp_task_wdt_config_t wdt_cfg = { .timeout_ms = 60000, .idle_core_mask = 0,
-                                       .trigger_panic = true };
+    esp_task_wdt_config_t wdt_cfg = {.timeout_ms = 60000, .idle_core_mask = 0, .trigger_panic = true};
     esp_task_wdt_reconfigure(&wdt_cfg);
     esp_task_wdt_add(NULL); /* Add loop task */
 
@@ -2213,8 +2791,8 @@ void setup() {
         Serial.printf("Telegram: enabled (chat_id %s)\n", cfg_telegram_chat_id);
         char startMsg[160];
         snprintf(startMsg, sizeof(startMsg),
-            "WireClaw v%s started\nConfig: http://%s/\nmDNS: http://%s.local/",
-            WIRECLAW_VERSION, WiFi.localIP().toString().c_str(), cfg_device_name);
+                 "WireClaw v%s started\nConfig: http://%s/\nmDNS: http://%s.local/",
+                 WIRECLAW_VERSION, WiFi.localIP().toString().c_str(), cfg_device_name);
         tgSendMessage(startMsg);
     } else {
         Serial.printf("Telegram: disabled (no telegram_token/telegram_chat_id in config)\n");
@@ -2223,9 +2801,11 @@ void setup() {
     /* QQ Bot via Official API (optional) */
     if (cfg_qq_app_id[0] != '\0' && cfg_qq_app_secret[0] != '\0') {
         g_qq_enabled = true;
-        qqClient.setInsecure();
-        qqClient.setTimeout(30);
-        qqLastPoll = millis();
+        qqHttpClient.setInsecure();
+        qqHttpClient.setTimeout(30);
+        qqWsClient.setInsecure();
+        qqWsClient.setTimeout(30);
+        qqLastPoll = millis() - QQ_WS_RECONNECT_DELAY; /* allow immediate first connect */
         Serial.printf("QQ: enabled (AppID: %s)\n", cfg_qq_app_id);
         /* Get access token and verify connection */
         if (qqGetAccessToken()) {
@@ -2252,6 +2832,13 @@ void setup() {
 static unsigned long lastHeartbeat = 0;
 #define HEARTBEAT_INTERVAL_MS 3000
 
+/**
+ * 固件主事件循环。
+ *
+ * 循环内会持续处理连接状态、Web 配置、消息后端、自动化逻辑、
+ * 串口输入和延迟重启，同时持续喂狗。
+
+ */
 void loop() {
     esp_task_wdt_reset(); /* Feed the watchdog */
 

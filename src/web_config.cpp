@@ -26,12 +26,16 @@ extern char cfg_nats_host[64];
 extern int  cfg_nats_port;
 extern char cfg_telegram_token[64];
 extern char cfg_telegram_chat_id[16];
+extern char cfg_qq_app_id[32];
+extern char cfg_qq_app_secret[64];
 extern char cfg_system_prompt[4096];
 extern char cfg_timezone[64];
 extern int  cfg_telegram_cooldown;
+extern int  cfg_qq_cooldown;
 extern bool g_nats_enabled;
 extern bool g_nats_connected;
 extern bool g_telegram_enabled;
+extern bool g_qq_enabled;
 
 static WebServer server(80);
 
@@ -110,16 +114,43 @@ static void maskSensitive(const char *src, char *dst, int dst_len) {
     }
 }
 
+static void inferMessagePlatform(char *dst, int dst_len, const char *messagePlatform,
+                                 const char *telegramToken, const char *qqAppId,
+                                 const char *qqAppSecret) {
+    if (messagePlatform[0]) {
+        strncpy(dst, messagePlatform, dst_len - 1);
+        dst[dst_len - 1] = '\0';
+        return;
+    }
+    if (qqAppId[0] || qqAppSecret[0]) {
+        strncpy(dst, "qq", dst_len - 1);
+    } else if (telegramToken[0]) {
+        strncpy(dst, "telegram", dst_len - 1);
+    } else {
+        strncpy(dst, "telegram", dst_len - 1);
+    }
+    dst[dst_len - 1] = '\0';
+}
+
 /*============================================================================
  * REST API Handlers
  *============================================================================*/
 
 static void handleGetConfig() {
-    static char buf[1024];
-    char masked_key[16], masked_pass[16], masked_tg[16];
+    static char buf[1536];
+    static char existing[1536];
+    char masked_key[16], masked_pass[16], masked_tg[16], masked_qq_secret[16];
+    char message_platform[16] = "";
     maskSensitive(cfg_api_key, masked_key, sizeof(masked_key));
     maskSensitive(cfg_wifi_pass, masked_pass, sizeof(masked_pass));
     maskSensitive(cfg_telegram_token, masked_tg, sizeof(masked_tg));
+    maskSensitive(cfg_qq_app_secret, masked_qq_secret, sizeof(masked_qq_secret));
+    int elen = wcReadFile("/config.json", existing, sizeof(existing));
+    if (elen > 0) {
+        wcJsonGetString(existing, "message_platform", message_platform, sizeof(message_platform));
+    }
+    inferMessagePlatform(message_platform, sizeof(message_platform), message_platform,
+                         cfg_telegram_token, cfg_qq_app_id, cfg_qq_app_secret);
 
     snprintf(buf, sizeof(buf),
         "{"
@@ -131,14 +162,20 @@ static void handleGetConfig() {
         "\"api_base_url\":\"%s\","
         "\"nats_host\":\"%s\","
         "\"nats_port\":\"%d\","
+        "\"message_platform\":\"%s\","
         "\"telegram_token\":\"%s\","
         "\"telegram_chat_id\":\"%s\","
         "\"telegram_cooldown\":\"%d\","
+        "\"qq_app_id\":\"%s\","
+        "\"qq_app_secret\":\"%s\","
+        "\"qq_cooldown\":\"%d\","
         "\"timezone\":\"%s\""
         "}",
         cfg_wifi_ssid, masked_pass, masked_key, cfg_model,
         cfg_device_name, cfg_api_base_url, cfg_nats_host, cfg_nats_port,
-        masked_tg, cfg_telegram_chat_id, cfg_telegram_cooldown, cfg_timezone);
+        message_platform,
+        masked_tg, cfg_telegram_chat_id, cfg_telegram_cooldown,
+        cfg_qq_app_id, masked_qq_secret, cfg_qq_cooldown, cfg_timezone);
 
     server.send(200, "application/json", buf);
 }
@@ -160,7 +197,7 @@ static void handlePostConfig() {
     const String &body = server.arg("plain");
 
     /* Read existing config to preserve masked fields */
-    static char existing[1024];
+    static char existing[1536];
     int elen = wcReadFile("/config.json", existing, sizeof(existing));
     if (elen <= 0) existing[0] = '\0';
 
@@ -169,14 +206,15 @@ static void handlePostConfig() {
         const char *key;
         char val[128];
     };
-    static Field fields[12];
+    static Field fields[16];
     const char *keys[] = {
         "wifi_ssid", "wifi_pass", "api_key", "model", "device_name",
-        "api_base_url", "nats_host", "nats_port", "telegram_token",
-        "telegram_chat_id", "telegram_cooldown", "timezone"
+        "api_base_url", "nats_host", "nats_port", "message_platform",
+        "telegram_token", "telegram_chat_id", "telegram_cooldown",
+        "qq_app_id", "qq_app_secret", "qq_cooldown", "timezone"
     };
 
-    for (int i = 0; i < 12; i++) {
+    for (int i = 0; i < 16; i++) {
         fields[i].key = keys[i];
         fields[i].val[0] = '\0';
 
@@ -190,6 +228,34 @@ static void handlePostConfig() {
         }
     }
 
+    char messagePlatform[16] = "";
+    inferMessagePlatform(messagePlatform, sizeof(messagePlatform), fields[8].val, fields[9].val,
+                         fields[12].val, fields[13].val);
+    strncpy(fields[8].val, messagePlatform, sizeof(fields[8].val) - 1);
+    fields[8].val[sizeof(fields[8].val) - 1] = '\0';
+
+    if (strcmp(messagePlatform, "qq") == 0) {
+        fields[9].val[0] = '\0';
+        fields[10].val[0] = '\0';
+        strncpy(fields[11].val, "15", sizeof(fields[11].val) - 1);
+        fields[11].val[sizeof(fields[11].val) - 1] = '\0';
+        if (fields[14].val[0] == '\0') {
+            strncpy(fields[14].val, "15", sizeof(fields[14].val) - 1);
+            fields[14].val[sizeof(fields[14].val) - 1] = '\0';
+        }
+    } else {
+        strncpy(fields[8].val, "telegram", sizeof(fields[8].val) - 1);
+        fields[8].val[sizeof(fields[8].val) - 1] = '\0';
+        fields[12].val[0] = '\0';
+        fields[13].val[0] = '\0';
+        strncpy(fields[14].val, "15", sizeof(fields[14].val) - 1);
+        fields[14].val[sizeof(fields[14].val) - 1] = '\0';
+        if (fields[11].val[0] == '\0') {
+            strncpy(fields[11].val, "15", sizeof(fields[11].val) - 1);
+            fields[11].val[sizeof(fields[11].val) - 1] = '\0';
+        }
+    }
+
     /* Write complete config */
     File f = LittleFS.open("/config.json", "w");
     if (!f) {
@@ -198,10 +264,10 @@ static void handlePostConfig() {
     }
 
     f.print("{\n");
-    for (int i = 0; i < 12; i++) {
+    for (int i = 0; i < 16; i++) {
         f.print("  \""); f.print(fields[i].key); f.print("\": ");
         wcWriteJsonEscaped(f, fields[i].val);
-        if (i < 11) f.print(",");
+        if (i < 15) f.print(",");
         f.print("\n");
     }
     f.print("}\n");
@@ -289,7 +355,8 @@ static void handleGetStatus() {
         "\"wifi_rssi\":%d,"
         "\"model\":\"%s\","
         "\"nats\":\"%s\","
-        "\"telegram\":\"%s\""
+        "\"telegram\":\"%s\","
+        "\"qq\":\"%s\""
         "}",
         WIRECLAW_VERSION, cfg_device_name,
         days, hours, mins, secs, uptime,
@@ -297,7 +364,8 @@ static void handleGetStatus() {
         cfg_wifi_ssid, WiFi.localIP().toString().c_str(), WiFi.RSSI(),
         cfg_model,
         g_nats_enabled ? (g_nats_connected ? "connected" : "disconnected") : "disabled",
-        g_telegram_enabled ? "enabled" : "disabled");
+        g_telegram_enabled ? "enabled" : "disabled",
+        g_qq_enabled ? "enabled" : "disabled");
 
     server.send(200, "application/json", buf);
 }
@@ -577,10 +645,10 @@ nav button.active{color:var(--accent);border-bottom-color:var(--accent)}
 label{display:block;font-size:0.8rem;color:var(--accent);font-weight:600;margin:1rem 0 0.25rem;
 font-family:var(--mono);text-transform:uppercase;letter-spacing:0.04em}
 label:first-child{margin-top:0}
-input[type=text],input[type=password],input[type=number]{width:100%;padding:0.6rem 0.75rem;
+input[type=text],input[type=password],input[type=number],select{width:100%;padding:0.6rem 0.75rem;
 background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);
 font-family:var(--mono);font-size:0.85rem;transition:border-color 0.15s}
-input:focus{outline:none;border-color:var(--border-a)}
+input:focus,select:focus{outline:none;border-color:var(--border-a)}
 textarea{width:100%;padding:0.75rem;background:var(--bg2);border:1px solid var(--border);
 border-radius:8px;color:var(--text);font-family:var(--mono);font-size:0.85rem;
 resize:vertical;min-height:200px;line-height:1.6;transition:border-color 0.15s}
@@ -629,6 +697,8 @@ padding:0.1rem 0.4rem;border-radius:4px;line-height:1;transition:all 0.15s}
 .spark{display:flex;align-items:flex-end;gap:2px;height:20px;margin-top:4px}
 .spark-bar{width:6px;background:var(--accent);border-radius:1px;min-height:2px}
 .rules-empty{text-align:center;color:var(--text3);padding:2rem 0;font-size:0.9rem}
+.platform-fields{display:none}
+.platform-fields.active{display:block}
 @media(max-width:480px){
 .wrap{padding:0.75rem}
 .card{padding:1rem}
@@ -672,12 +742,27 @@ nav button{padding:0.4rem 0.6rem;font-size:0.8rem}
 <label>NATS Port</label>
 <input type="number" id="c_nats_port">
 <div class="sep"></div>
+<label>Message Platform</label>
+<select id="c_message_platform" onchange="togglePlatformFields()">
+<option value="telegram">Telegram</option>
+<option value="qq">QQ</option>
+</select>
+<div id="platform_telegram" class="platform-fields active">
 <label>Telegram Bot Token</label>
 <input type="password" id="c_telegram_token">
 <label>Telegram Chat ID</label>
 <input type="text" id="c_telegram_chat_id">
 <label>Telegram Cooldown (seconds)</label>
 <input type="number" id="c_telegram_cooldown">
+</div>
+<div id="platform_qq" class="platform-fields">
+<label>QQ App ID</label>
+<input type="text" id="c_qq_app_id">
+<label>QQ App Secret</label>
+<input type="password" id="c_qq_app_secret">
+<label>QQ Cooldown (seconds)</label>
+<input type="number" id="c_qq_cooldown">
+</div>
 <div class="sep"></div>
 <label>Timezone</label>
 <input type="text" id="c_timezone">
@@ -759,16 +844,24 @@ var t=document.getElementById('toast');
 t.textContent=msg;t.className='toast show '+(ok?'ok':'err');
 setTimeout(function(){t.className='toast'},2500);
 }
+function togglePlatformFields(){
+var platform=(document.getElementById('c_message_platform')||{}).value||'telegram';
+document.getElementById('platform_telegram').className='platform-fields'+(platform==='telegram'?' active':'');
+document.getElementById('platform_qq').className='platform-fields'+(platform==='qq'?' active':'');
+}
 function loadConfig(){
 fetch('/api/config').then(r=>r.json()).then(d=>{
 var f=['wifi_ssid','wifi_pass','api_key','model','device_name','api_base_url',
-'nats_host','nats_port','telegram_token','telegram_chat_id','telegram_cooldown','timezone'];
+'nats_host','nats_port','message_platform','telegram_token','telegram_chat_id',
+'telegram_cooldown','qq_app_id','qq_app_secret','qq_cooldown','timezone'];
 f.forEach(k=>{var el=document.getElementById('c_'+k);if(el)el.value=d[k]||''});
+togglePlatformFields();
 }).catch(e=>toast('Failed to load config',false));
 }
 function saveConfig(){
 var f=['wifi_ssid','wifi_pass','api_key','model','device_name','api_base_url',
-'nats_host','nats_port','telegram_token','telegram_chat_id','telegram_cooldown','timezone'];
+'nats_host','nats_port','message_platform','telegram_token','telegram_chat_id',
+'telegram_cooldown','qq_app_id','qq_app_secret','qq_cooldown','timezone'];
 var d={};f.forEach(k=>{d[k]=document.getElementById('c_'+k).value});
 fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},
 body:JSON.stringify(d)}).then(r=>r.json()).then(j=>{
@@ -808,7 +901,8 @@ var items=[
 {l:'IP Address',v:d.wifi_ip,cls:'accent'},
 {l:'Model',v:d.model,full:true},
 {l:'NATS',v:d.nats},
-{l:'Telegram',v:d.telegram}
+{l:'Telegram',v:d.telegram},
+{l:'QQ',v:d.qq}
 ];
 var h='';items.forEach(i=>{
 h+='<div class="status-item'+(i.full?' full':'')+'"><div class="label">'+i.l+

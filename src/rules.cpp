@@ -79,17 +79,6 @@ static ActionType actionFromString(const char *s) {
     if (strcmp(s, "serial_send") == 0)  return ACT_SERIAL_SEND;
     return ACT_GPIO_WRITE;
 }
-}
-
-static ActionType actionFromString(const char *s) {
-    if (strcmp(s, "gpio_write") == 0)   return ACT_GPIO_WRITE;
-    if (strcmp(s, "led_set") == 0)      return ACT_LED_SET;
-    if (strcmp(s, "nats_publish") == 0) return ACT_NATS_PUBLISH;
-    if (strcmp(s, "actuator") == 0)     return ACT_ACTUATOR;
-    if (strcmp(s, "telegram") == 0)     return ACT_TELEGRAM;
-    if (strcmp(s, "serial_send") == 0) return ACT_SERIAL_SEND;
-    return ACT_GPIO_WRITE;
-}
 
 /*============================================================================
  * CRUD
