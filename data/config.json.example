@@ -2,6 +2,7 @@
   "wifi_ssid": "",
   "wifi_pass": "",
   "api_key": "",
+  "llm_provider": "openrouter",
   "model": "google/gemini-2.5-flash",
   "device_name": "wireclaw-01",
   "api_base_url": "",

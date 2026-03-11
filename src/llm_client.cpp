@@ -209,14 +209,25 @@ LlmClient::LlmClient()
     : m_client(nullptr), m_api_key(nullptr), m_model(nullptr),
       m_port(443), m_use_tls(true), m_last_http_status(0) {
     m_error[0] = '\0';
+    strncpy(m_provider, "openrouter", sizeof(m_provider));
+    m_provider[sizeof(m_provider) - 1] = '\0';
     m_host[0] = '\0';
     m_path[0] = '\0';
 }
 
-void LlmClient::begin(const char *api_key, const char *model, const char *base_url) {
+void LlmClient::begin(const char *api_key, const char *model, const char *base_url,
+                      const char *provider) {
     m_api_key = api_key;
     m_model = model;
+    if (provider && provider[0]) {
+        strncpy(m_provider, provider, sizeof(m_provider) - 1);
+        m_provider[sizeof(m_provider) - 1] = '\0';
+    } else {
+        strncpy(m_provider, "openrouter", sizeof(m_provider) - 1);
+        m_provider[sizeof(m_provider) - 1] = '\0';
+    }
     Serial.printf("LLM: model: %s\n",m_model);
+    Serial.printf("LLM: provider: %s\n", m_provider);
 
     /* Parse base_url or use defaults */
     if (base_url && base_url[0]) {
@@ -264,10 +275,21 @@ void LlmClient::begin(const char *api_key, const char *model, const char *base_u
         Serial.printf("LLM: %s://%s:%d%s\n",
                       m_use_tls ? "https" : "http", m_host, m_port, m_path);
     } else {
-        m_use_tls = true;
-        strncpy(m_host, DEFAULT_HOST, sizeof(m_host));
-        m_port = DEFAULT_PORT;
-        strncpy(m_path, DEFAULT_PATH, sizeof(m_path));
+        if (strcmp(m_provider, "swoole") == 0) {
+            m_use_tls = true;
+            strncpy(m_host, "chat.swoole.com", sizeof(m_host) - 1);
+            m_host[sizeof(m_host) - 1] = '\0';
+            m_port = 443;
+            strncpy(m_path, "/v1/chat/compatible", sizeof(m_path) - 1);
+            m_path[sizeof(m_path) - 1] = '\0';
+        } else {
+            m_use_tls = true;
+            strncpy(m_host, DEFAULT_HOST, sizeof(m_host) - 1);
+            m_host[sizeof(m_host) - 1] = '\0';
+            m_port = DEFAULT_PORT;
+            strncpy(m_path, DEFAULT_PATH, sizeof(m_path) - 1);
+            m_path[sizeof(m_path) - 1] = '\0';
+        }
     }
 
     if (m_use_tls) {
@@ -358,6 +380,11 @@ int LlmClient::buildRequest(char *buf, int buf_len,
     if (tools_json && tools_json[0]) {
         w += snprintf(buf + w, buf_len - w,
             ",\"tools\":%s,\"tool_choice\":\"auto\"", tools_json);
+        if (w >= buf_len) return -1;
+    }
+
+    if (strcmp(m_provider, "swoole") == 0) {
+        w += snprintf(buf + w, buf_len - w, ",\"raw\":1");
         if (w >= buf_len) return -1;
     }
 
@@ -466,6 +493,23 @@ bool LlmClient::parseResponse(const char *body, int body_len, LlmResult *result)
     result->completion_tokens = 0;
     result->tool_call_count = 0;
     result->tool_calls_json[0] = '\0';
+
+    int provider_code = (strcmp(m_provider, "swoole") == 0)
+                        ? json_find_int(body, body_len, "code", 0)
+                        : 0;
+    if (provider_code != 0) {
+        int elen = 0;
+        const char *errmsg = json_find_string(body, body_len, "message", &elen);
+        if (errmsg && elen > 0) {
+            int copy = elen < (int)sizeof(m_error) - 1 ? elen : (int)sizeof(m_error) - 1;
+            memcpy(m_error, errmsg, copy);
+            m_error[copy] = '\0';
+            json_unescape(m_error, copy);
+        } else {
+            snprintf(m_error, sizeof(m_error), "Provider error code %d", provider_code);
+        }
+        return false;
+    }
 
     /* Check for tool calls first */
     int tc_count = parseToolCalls(body, body_len, result);
