@@ -189,7 +189,6 @@ static bool saveConfig(const char *body) {
     }
 
     char val[128];
-    char messagePlatform[16];
 
     f.print("{\n");
 
@@ -220,37 +219,26 @@ static bool saveConfig(const char *body) {
     if (val[0] == '\0') strncpy(val, "4222", sizeof(val));
     f.print("  \"nats_port\": "); writeJsonEscaped(f, val); f.print(",\n");
 
-    formGetField(body, "message_platform", messagePlatform, sizeof(messagePlatform));
-    if (strcmp(messagePlatform, "qq") != 0) strncpy(messagePlatform, "telegram", sizeof(messagePlatform));
-    messagePlatform[sizeof(messagePlatform) - 1] = '\0';
-    f.print("  \"message_platform\": "); writeJsonEscaped(f, messagePlatform); f.print(",\n");
+    formGetField(body, "message_platform", val, sizeof(val));
+    f.print("  \"message_platform\": "); writeJsonEscaped(f, val); f.print(",\n");
 
-    if (strcmp(messagePlatform, "telegram") == 0) {
-        formGetField(body, "telegram_token", val, sizeof(val));
-        f.print("  \"telegram_token\": "); writeJsonEscaped(f, val); f.print(",\n");
+    formGetField(body, "telegram_token", val, sizeof(val));
+    f.print("  \"telegram_token\": "); writeJsonEscaped(f, val); f.print(",\n");
 
-        formGetField(body, "telegram_chat_id", val, sizeof(val));
-        f.print("  \"telegram_chat_id\": "); writeJsonEscaped(f, val); f.print(",\n");
+    formGetField(body, "telegram_chat_id", val, sizeof(val));
+    f.print("  \"telegram_chat_id\": "); writeJsonEscaped(f, val); f.print(",\n");
 
-        f.print("  \"telegram_cooldown\": \"15\",\n");
-        f.print("  \"qq_app_id\": \"\",\n");
-        f.print("  \"qq_app_secret\": \"\",\n");
-        f.print("  \"qq_cooldown\": \"15\",\n");
-    } else {
-        f.print("  \"telegram_token\": \"\",\n");
-        f.print("  \"telegram_chat_id\": \"\",\n");
-        f.print("  \"telegram_cooldown\": \"15\",\n");
+    f.print("  \"telegram_cooldown\": \"15\",\n");
 
-        formGetField(body, "qq_app_id", val, sizeof(val));
-        f.print("  \"qq_app_id\": "); writeJsonEscaped(f, val); f.print(",\n");
+    formGetField(body, "qq_app_id", val, sizeof(val));
+    f.print("  \"qq_app_id\": "); writeJsonEscaped(f, val); f.print(",\n");
 
-        formGetField(body, "qq_app_secret", val, sizeof(val));
-        f.print("  \"qq_app_secret\": "); writeJsonEscaped(f, val); f.print(",\n");
+    formGetField(body, "qq_app_secret", val, sizeof(val));
+    f.print("  \"qq_app_secret\": "); writeJsonEscaped(f, val); f.print(",\n");
 
-        formGetField(body, "qq_cooldown", val, sizeof(val));
-        if (val[0] == '\0') strncpy(val, "15", sizeof(val));
-        f.print("  \"qq_cooldown\": "); writeJsonEscaped(f, val); f.print(",\n");
-    }
+    formGetField(body, "qq_cooldown", val, sizeof(val));
+    if (val[0] == '\0') strncpy(val, "15", sizeof(val));
+    f.print("  \"qq_cooldown\": "); writeJsonEscaped(f, val); f.print(",\n");
 
     formGetField(body, "timezone", val, sizeof(val));
     if (val[0] == '\0') strncpy(val, "UTC0", sizeof(val));

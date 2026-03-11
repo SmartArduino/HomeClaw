@@ -28,10 +28,10 @@ extern char cfg_telegram_token[64];
 extern char cfg_telegram_chat_id[16];
 extern char cfg_qq_app_id[32];
 extern char cfg_qq_app_secret[64];
+extern int  cfg_qq_cooldown;
 extern char cfg_system_prompt[4096];
 extern char cfg_timezone[64];
 extern int  cfg_telegram_cooldown;
-extern int  cfg_qq_cooldown;
 extern bool g_nats_enabled;
 extern bool g_nats_connected;
 extern bool g_telegram_enabled;
@@ -114,43 +114,17 @@ static void maskSensitive(const char *src, char *dst, int dst_len) {
     }
 }
 
-static void inferMessagePlatform(char *dst, int dst_len, const char *messagePlatform,
-                                 const char *telegramToken, const char *qqAppId,
-                                 const char *qqAppSecret) {
-    if (messagePlatform[0]) {
-        strncpy(dst, messagePlatform, dst_len - 1);
-        dst[dst_len - 1] = '\0';
-        return;
-    }
-    if (qqAppId[0] || qqAppSecret[0]) {
-        strncpy(dst, "qq", dst_len - 1);
-    } else if (telegramToken[0]) {
-        strncpy(dst, "telegram", dst_len - 1);
-    } else {
-        strncpy(dst, "telegram", dst_len - 1);
-    }
-    dst[dst_len - 1] = '\0';
-}
-
 /*============================================================================
  * REST API Handlers
  *============================================================================*/
 
 static void handleGetConfig() {
-    static char buf[1536];
-    static char existing[1536];
-    char masked_key[16], masked_pass[16], masked_tg[16], masked_qq_secret[16];
-    char message_platform[16] = "";
+    static char buf[1280];
+    char masked_key[16], masked_pass[16], masked_tg[16], masked_qq[16];
     maskSensitive(cfg_api_key, masked_key, sizeof(masked_key));
     maskSensitive(cfg_wifi_pass, masked_pass, sizeof(masked_pass));
     maskSensitive(cfg_telegram_token, masked_tg, sizeof(masked_tg));
-    maskSensitive(cfg_qq_app_secret, masked_qq_secret, sizeof(masked_qq_secret));
-    int elen = wcReadFile("/config.json", existing, sizeof(existing));
-    if (elen > 0) {
-        wcJsonGetString(existing, "message_platform", message_platform, sizeof(message_platform));
-    }
-    inferMessagePlatform(message_platform, sizeof(message_platform), message_platform,
-                         cfg_telegram_token, cfg_qq_app_id, cfg_qq_app_secret);
+    maskSensitive(cfg_qq_app_secret, masked_qq, sizeof(masked_qq));
 
     snprintf(buf, sizeof(buf),
         "{"
@@ -173,9 +147,9 @@ static void handleGetConfig() {
         "}",
         cfg_wifi_ssid, masked_pass, masked_key, cfg_model,
         cfg_device_name, cfg_api_base_url, cfg_nats_host, cfg_nats_port,
-        message_platform,
+        g_qq_enabled ? "qq" : "telegram",
         masked_tg, cfg_telegram_chat_id, cfg_telegram_cooldown,
-        cfg_qq_app_id, masked_qq_secret, cfg_qq_cooldown, cfg_timezone);
+        cfg_qq_app_id, masked_qq, cfg_qq_cooldown, cfg_timezone);
 
     server.send(200, "application/json", buf);
 }
@@ -197,7 +171,7 @@ static void handlePostConfig() {
     const String &body = server.arg("plain");
 
     /* Read existing config to preserve masked fields */
-    static char existing[1536];
+    static char existing[1024];
     int elen = wcReadFile("/config.json", existing, sizeof(existing));
     if (elen <= 0) existing[0] = '\0';
 
@@ -225,34 +199,6 @@ static void handlePostConfig() {
             strncpy(fields[i].val, newVal, sizeof(fields[i].val) - 1);
         } else if (existing[0]) {
             wcJsonGetString(existing, keys[i], fields[i].val, sizeof(fields[i].val));
-        }
-    }
-
-    char messagePlatform[16] = "";
-    inferMessagePlatform(messagePlatform, sizeof(messagePlatform), fields[8].val, fields[9].val,
-                         fields[12].val, fields[13].val);
-    strncpy(fields[8].val, messagePlatform, sizeof(fields[8].val) - 1);
-    fields[8].val[sizeof(fields[8].val) - 1] = '\0';
-
-    if (strcmp(messagePlatform, "qq") == 0) {
-        fields[9].val[0] = '\0';
-        fields[10].val[0] = '\0';
-        strncpy(fields[11].val, "15", sizeof(fields[11].val) - 1);
-        fields[11].val[sizeof(fields[11].val) - 1] = '\0';
-        if (fields[14].val[0] == '\0') {
-            strncpy(fields[14].val, "15", sizeof(fields[14].val) - 1);
-            fields[14].val[sizeof(fields[14].val) - 1] = '\0';
-        }
-    } else {
-        strncpy(fields[8].val, "telegram", sizeof(fields[8].val) - 1);
-        fields[8].val[sizeof(fields[8].val) - 1] = '\0';
-        fields[12].val[0] = '\0';
-        fields[13].val[0] = '\0';
-        strncpy(fields[14].val, "15", sizeof(fields[14].val) - 1);
-        fields[14].val[sizeof(fields[14].val) - 1] = '\0';
-        if (fields[11].val[0] == '\0') {
-            strncpy(fields[11].val, "15", sizeof(fields[11].val) - 1);
-            fields[11].val[sizeof(fields[11].val) - 1] = '\0';
         }
     }
 
@@ -309,7 +255,7 @@ static void handlePostPrompt() {
 }
 
 static void handleGetMemory() {
-    static char buf[512];
+    static char buf[576];
     int len = wcReadFile("/memory.txt", buf, sizeof(buf));
     if (len <= 0) buf[0] = '\0';
     server.send(200, "text/plain", buf);
@@ -645,10 +591,14 @@ nav button.active{color:var(--accent);border-bottom-color:var(--accent)}
 label{display:block;font-size:0.8rem;color:var(--accent);font-weight:600;margin:1rem 0 0.25rem;
 font-family:var(--mono);text-transform:uppercase;letter-spacing:0.04em}
 label:first-child{margin-top:0}
-input[type=text],input[type=password],input[type=number],select{width:100%;padding:0.6rem 0.75rem;
+input[type=text],input[type=password],input[type=number]{width:100%;padding:0.6rem 0.75rem;
 background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);
 font-family:var(--mono);font-size:0.85rem;transition:border-color 0.15s}
-input:focus,select:focus{outline:none;border-color:var(--border-a)}
+select{width:100%;padding:0.6rem 0.75rem;
+background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);
+font-family:var(--mono);font-size:0.85rem;transition:border-color 0.15s}
+input:focus{outline:none;border-color:var(--border-a)}
+select:focus{outline:none;border-color:var(--border-a)}
 textarea{width:100%;padding:0.75rem;background:var(--bg2);border:1px solid var(--border);
 border-radius:8px;color:var(--text);font-family:var(--mono);font-size:0.85rem;
 resize:vertical;min-height:200px;line-height:1.6;transition:border-color 0.15s}
@@ -665,6 +615,8 @@ font-family:var(--font)}
 .btn-outline:hover{border-color:var(--accent);color:var(--accent)}
 .actions{display:flex;gap:0.75rem;margin-top:1.25rem;flex-wrap:wrap}
 .sep{border-top:1px solid var(--border);margin:1rem 0}
+.platform-group{display:none}
+.platform-group.active{display:block}
 .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);padding:0.6rem 1.25rem;
 border-radius:8px;font-size:0.85rem;font-weight:500;z-index:999;opacity:0;
 transition:opacity 0.3s;pointer-events:none}
@@ -697,8 +649,6 @@ padding:0.1rem 0.4rem;border-radius:4px;line-height:1;transition:all 0.15s}
 .spark{display:flex;align-items:flex-end;gap:2px;height:20px;margin-top:4px}
 .spark-bar{width:6px;background:var(--accent);border-radius:1px;min-height:2px}
 .rules-empty{text-align:center;color:var(--text3);padding:2rem 0;font-size:0.9rem}
-.platform-fields{display:none}
-.platform-fields.active{display:block}
 @media(max-width:480px){
 .wrap{padding:0.75rem}
 .card{padding:1rem}
@@ -747,7 +697,7 @@ nav button{padding:0.4rem 0.6rem;font-size:0.8rem}
 <option value="telegram">Telegram</option>
 <option value="qq">QQ</option>
 </select>
-<div id="platform_telegram" class="platform-fields active">
+<div id="platform_telegram" class="platform-group active">
 <label>Telegram Bot Token</label>
 <input type="password" id="c_telegram_token">
 <label>Telegram Chat ID</label>
@@ -755,7 +705,7 @@ nav button{padding:0.4rem 0.6rem;font-size:0.8rem}
 <label>Telegram Cooldown (seconds)</label>
 <input type="number" id="c_telegram_cooldown">
 </div>
-<div id="platform_qq" class="platform-fields">
+<div id="platform_qq" class="platform-group">
 <label>QQ App ID</label>
 <input type="text" id="c_qq_app_id">
 <label>QQ App Secret</label>
@@ -845,9 +795,9 @@ t.textContent=msg;t.className='toast show '+(ok?'ok':'err');
 setTimeout(function(){t.className='toast'},2500);
 }
 function togglePlatformFields(){
-var platform=(document.getElementById('c_message_platform')||{}).value||'telegram';
-document.getElementById('platform_telegram').className='platform-fields'+(platform==='telegram'?' active':'');
-document.getElementById('platform_qq').className='platform-fields'+(platform==='qq'?' active':'');
+var platform=document.getElementById('c_message_platform').value;
+document.getElementById('platform_telegram').className='platform-group'+(platform==='telegram'?' active':'');
+document.getElementById('platform_qq').className='platform-group'+(platform==='qq'?' active':'');
 }
 function loadConfig(){
 fetch('/api/config').then(r=>r.json()).then(d=>{

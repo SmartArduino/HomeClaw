@@ -65,22 +65,18 @@ int cfg_telegram_cooldown = 3; /* seconds, 0 = disabled */
 static void configDefaults() {
     cfg_wifi_ssid[0] = '\0';
     cfg_wifi_pass[0] = '\0';
-    // cfg_api_key[0] = '\0';
-    strncpy(cfg_api_key, "sk-cp-yipCduEuaQq3vCRoF0e-JPMNndZdsZee3h8w0mJSvVABw6lN6bfLWH-LiqAo48lV9sxTbPrpvcro3yU-U2_Twgad0qnH9DuFjirqEBdlqbg9wHVRvZTVsaA", sizeof(cfg_api_key));
+    cfg_api_key[0] = '\0';
     strncpy(cfg_model, "MiniMax-M2.5", sizeof(cfg_model));
     strncpy(cfg_device_name, "wireclaw", sizeof(cfg_device_name));
-    // cfg_api_base_url[0] = '\0';
-    strncpy(cfg_api_base_url, "https://api.minimaxi.com/v1/chat/completions", sizeof(cfg_api_base_url));
+    cfg_api_base_url[0] = '\0';
     cfg_nats_host[0] = '\0';
     cfg_nats_port = 4222;
     cfg_telegram_token[0] = '\0';
     cfg_telegram_chat_id[0] = '\0';
     cfg_qq_http_host[0] = '\0';
     cfg_qq_http_port = 8080;
-    // cfg_qq_app_id[0] = '\0';
-    strncpy(cfg_qq_app_id, "1903272956", sizeof(cfg_qq_app_id));
-    // cfg_qq_app_secret[0] = '\0';
-    strncpy(cfg_qq_app_secret, "6FOYis2CMWhs3EPamyAMYkxANan0DRft", sizeof(cfg_qq_app_secret));
+    cfg_qq_app_id[0] = '\0';
+    cfg_qq_app_secret[0] = '\0';
     cfg_qq_access_token[0] = '\0';
     cfg_qq_token_expires = 0;
     cfg_qq_cooldown = 3;

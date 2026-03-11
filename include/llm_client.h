@@ -91,6 +91,7 @@ private:
     int  m_port;
     char m_path[64];
     bool m_use_tls;
+    int  m_last_http_status;
     char m_error[128];
 
     int buildRequest(char *buf, int buf_len,

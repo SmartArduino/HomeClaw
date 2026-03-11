@@ -94,6 +94,30 @@ static int json_find_int(const char *json, int json_len,
     return atoi(after_key);
 }
 
+static int hex_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static int append_utf8(char *buf, int w, int max_len, uint16_t codepoint) {
+    if (codepoint <= 0x7F) {
+        if (w + 1 >= max_len) return -1;
+        buf[w++] = (char)codepoint;
+    } else if (codepoint <= 0x7FF) {
+        if (w + 2 >= max_len) return -1;
+        buf[w++] = (char)(0xC0 | (codepoint >> 6));
+        buf[w++] = (char)(0x80 | (codepoint & 0x3F));
+    } else {
+        if (w + 3 >= max_len) return -1;
+        buf[w++] = (char)(0xE0 | (codepoint >> 12));
+        buf[w++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+        buf[w++] = (char)(0x80 | (codepoint & 0x3F));
+    }
+    return w;
+}
+
 static int json_unescape(char *buf, int len) {
     int r = 0, w = 0;
     while (r < len) {
@@ -106,6 +130,26 @@ static int json_unescape(char *buf, int len) {
                 case '\\': buf[w++] = '\\'; break;
                 case '"':  buf[w++] = '"';  break;
                 case '/':  buf[w++] = '/';  break;
+                case 'u':
+                    if (r + 4 < len) {
+                        int h1 = hex_val(buf[r + 1]);
+                        int h2 = hex_val(buf[r + 2]);
+                        int h3 = hex_val(buf[r + 3]);
+                        int h4 = hex_val(buf[r + 4]);
+                        if (h1 >= 0 && h2 >= 0 && h3 >= 0 && h4 >= 0) {
+                            uint16_t codepoint = (uint16_t)((h1 << 12) | (h2 << 8) | (h3 << 4) | h4);
+                            int nw = append_utf8(buf, w, len + 1, codepoint);
+                            if (nw < 0) {
+                                buf[w] = '\0';
+                                return w;
+                            }
+                            w = nw;
+                            r += 4;
+                            break;
+                        }
+                    }
+                    buf[w++] = 'u';
+                    break;
                 default:   buf[w++] = buf[r]; break;
             }
             r++;
@@ -163,7 +207,7 @@ static const char *json_skip_value(const char *p, const char *end) {
 
 LlmClient::LlmClient()
     : m_client(nullptr), m_api_key(nullptr), m_model(nullptr),
-      m_port(443), m_use_tls(true) {
+      m_port(443), m_use_tls(true), m_last_http_status(0) {
     m_error[0] = '\0';
     m_host[0] = '\0';
     m_path[0] = '\0';
@@ -172,6 +216,7 @@ LlmClient::LlmClient()
 void LlmClient::begin(const char *api_key, const char *model, const char *base_url) {
     m_api_key = api_key;
     m_model = model;
+    Serial.printf("LLM: model: %s\n",m_model);
 
     /* Parse base_url or use defaults */
     if (base_url && base_url[0]) {
@@ -445,12 +490,15 @@ bool LlmClient::parseResponse(const char *body, int body_len, LlmResult *result)
 
     /* No tool calls - need content */
     if (result->content_len <= 0) {
+        Serial.printf("[LLM] Parse failed: no content/tool_calls, http=%d, body=%.300s\n",
+                      m_last_http_status, body);
         int elen = 0;
         const char *errmsg = json_find_string(body, body_len, "message", &elen);
         if (errmsg && elen > 0) {
             int copy = elen < (int)sizeof(m_error) - 1 ? elen : (int)sizeof(m_error) - 1;
             memcpy(m_error, errmsg, copy);
             m_error[copy] = '\0';
+            json_unescape(m_error, copy);
         } else {
             snprintf(m_error, sizeof(m_error), "No content in response");
         }
@@ -473,6 +521,7 @@ int LlmClient::readResponse(char *buf, int buf_len) {
         return -1;
     }
     int http_status = status_line.substring(9, 12).toInt();
+    m_last_http_status = http_status;
     if (g_debug) Serial.printf("[LLM] HTTP %d\n", http_status);
 
     while (m_client->connected()) {
@@ -515,6 +564,9 @@ int LlmClient::readResponse(char *buf, int buf_len) {
     }
 
     buf[total] = '\0';
+    if (http_status < 200 || http_status >= 300) {
+        Serial.printf("[LLM] HTTP error %d, body=%.300s\n", http_status, buf);
+    }
     return total;
 }
 
@@ -525,6 +577,7 @@ bool LlmClient::chat(const LlmMessage *messages, int count,
     result->content_len = 0;
     result->http_status = 0;
     result->tool_call_count = 0;
+    m_last_http_status = 0;
 
     static char request_buf[LLM_MAX_REQUEST_LEN];
     int req_len = buildRequest(request_buf, sizeof(request_buf),
@@ -572,10 +625,13 @@ bool LlmClient::chat(const LlmMessage *messages, int count,
 
     static char response_buf[LLM_MAX_RESPONSE_LEN + 2048];
     int body_len = readResponse(response_buf, sizeof(response_buf));
+    result->http_status = m_last_http_status;
 
     m_client->stop();
 
     if (body_len <= 0) {
+        Serial.printf("[LLM] Empty/invalid response, http=%d, err=%s\n",
+                      m_last_http_status, m_error);
         snprintf(m_error, sizeof(m_error), "Empty response body");
         return false;
     }
@@ -587,5 +643,10 @@ bool LlmClient::chat(const LlmMessage *messages, int count,
                       response_buf);
     }
 
-    return parseResponse(response_buf, body_len, result);
+    bool ok = parseResponse(response_buf, body_len, result);
+    if (!ok) {
+        Serial.printf("[LLM] chat() failed: http=%d, error=%s, body=%.300s\n",
+                      result->http_status, m_error, response_buf);
+    }
+    return ok;
 }
