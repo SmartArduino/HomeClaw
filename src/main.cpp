@@ -40,7 +40,6 @@ char cfg_wifi_pass[64];
 char cfg_api_key[128];
 char cfg_model[64];
 char cfg_device_name[32];
-char cfg_llm_provider[16];
 char cfg_api_base_url[128];
 char cfg_nats_host[64];
 int cfg_nats_port = 4222;
@@ -69,7 +68,6 @@ static void configDefaults() {
     cfg_api_key[0] = '\0';
     strncpy(cfg_model, "MiniMax-M2.5", sizeof(cfg_model));
     strncpy(cfg_device_name, "wireclaw", sizeof(cfg_device_name));
-    strncpy(cfg_llm_provider, "openrouter", sizeof(cfg_llm_provider));
     cfg_api_base_url[0] = '\0';
     cfg_nats_host[0] = '\0';
     cfg_nats_port = 4222;
@@ -264,17 +262,7 @@ static bool loadConfig() {
         jsonGetStringAllowEmpty(json_buf, "api_key", cfg_api_key, sizeof(cfg_api_key));
         jsonGetString(json_buf, "model", cfg_model, sizeof(cfg_model));
         jsonGetString(json_buf, "device_name", cfg_device_name, sizeof(cfg_device_name));
-        jsonGetStringAllowEmpty(json_buf, "llm_provider", cfg_llm_provider, sizeof(cfg_llm_provider));
         jsonGetStringAllowEmpty(json_buf, "api_base_url", cfg_api_base_url, sizeof(cfg_api_base_url));
-        if (cfg_llm_provider[0] == '\0') {
-            if (strstr(cfg_api_base_url, "chat.swoole.com")) {
-                strncpy(cfg_llm_provider, "swoole", sizeof(cfg_llm_provider) - 1);
-                cfg_llm_provider[sizeof(cfg_llm_provider) - 1] = '\0';
-            } else {
-                strncpy(cfg_llm_provider, "openrouter", sizeof(cfg_llm_provider) - 1);
-                cfg_llm_provider[sizeof(cfg_llm_provider) - 1] = '\0';
-            }
-        }
         jsonGetStringAllowEmpty(json_buf, "nats_host", cfg_nats_host, sizeof(cfg_nats_host));
         char port_buf[8];
         if (jsonGetString(json_buf, "nats_port", port_buf, sizeof(port_buf))) {
@@ -2835,7 +2823,7 @@ void setup() {
     Serial.printf("NTP: syncing (TZ=%s)...\n", cfg_timezone);
 
     /* Init LLM client */
-    llm.begin(cfg_api_key, cfg_model, cfg_api_base_url, cfg_llm_provider);
+    llm.begin(cfg_api_key, cfg_model, cfg_api_base_url);
 
     /* Watchdog - reconfigure to 60s (Arduino already inits WDT at 5s) */
     esp_task_wdt_config_t wdt_cfg = {.timeout_ms = 60000, .idle_core_mask = 0, .trigger_panic = true};

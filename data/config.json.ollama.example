@@ -2,7 +2,6 @@
   "wifi_ssid": "A2",
   "wifi_pass": "W;2",
   "api_key": "",
-  "llm_provider": "openrouter",
   "model": "gpt-oss:latest",
   "device_name": "wireclaw-01",
   "api_base_url": "http://192.168.178.35:11434/v1/chat/completions",

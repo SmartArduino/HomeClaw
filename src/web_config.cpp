@@ -21,7 +21,6 @@ extern char cfg_wifi_pass[64];
 extern char cfg_api_key[128];
 extern char cfg_model[64];
 extern char cfg_device_name[32];
-extern char cfg_llm_provider[16];
 extern char cfg_api_base_url[128];
 extern char cfg_nats_host[64];
 extern int  cfg_nats_port;
@@ -132,7 +131,6 @@ static void handleGetConfig() {
         "\"wifi_ssid\":\"%s\","
         "\"wifi_pass\":\"%s\","
         "\"api_key\":\"%s\","
-        "\"llm_provider\":\"%s\","
         "\"model\":\"%s\","
         "\"device_name\":\"%s\","
         "\"api_base_url\":\"%s\","
@@ -147,7 +145,7 @@ static void handleGetConfig() {
         "\"qq_cooldown\":\"%d\","
         "\"timezone\":\"%s\""
         "}",
-        cfg_wifi_ssid, masked_pass, masked_key, cfg_llm_provider, cfg_model,
+        cfg_wifi_ssid, masked_pass, masked_key, cfg_model,
         cfg_device_name, cfg_api_base_url, cfg_nats_host, cfg_nats_port,
         g_qq_enabled ? "qq" : "telegram",
         masked_tg, cfg_telegram_chat_id, cfg_telegram_cooldown,
@@ -182,15 +180,15 @@ static void handlePostConfig() {
         const char *key;
         char val[128];
     };
-    static Field fields[17];
+    static Field fields[16];
     const char *keys[] = {
-        "wifi_ssid", "wifi_pass", "api_key", "llm_provider", "model", "device_name",
+        "wifi_ssid", "wifi_pass", "api_key", "model", "device_name",
         "api_base_url", "nats_host", "nats_port", "message_platform",
         "telegram_token", "telegram_chat_id", "telegram_cooldown",
         "qq_app_id", "qq_app_secret", "qq_cooldown", "timezone"
     };
 
-    for (int i = 0; i < 17; i++) {
+    for (int i = 0; i < 16; i++) {
         fields[i].key = keys[i];
         fields[i].val[0] = '\0';
 
@@ -212,10 +210,10 @@ static void handlePostConfig() {
     }
 
     f.print("{\n");
-    for (int i = 0; i < 17; i++) {
+    for (int i = 0; i < 16; i++) {
         f.print("  \""); f.print(fields[i].key); f.print("\": ");
         wcWriteJsonEscaped(f, fields[i].val);
-        if (i < 16) f.print(",");
+        if (i < 15) f.print(",");
         f.print("\n");
     }
     f.print("}\n");
@@ -681,18 +679,13 @@ nav button{padding:0.4rem 0.6rem;font-size:0.8rem}
 <div class="sep"></div>
 <label>API Key</label>
 <input type="password" id="c_api_key">
-<label>LLM Provider</label>
-<select id="c_llm_provider">
-<option value="openrouter">OpenRouter</option>
-<option value="swoole">Swoole</option>
-</select>
 <label>Model</label>
 <input type="text" id="c_model">
 <label>Device Name</label>
 <input type="text" id="c_device_name">
 <label>API Base URL</label>
 <input type="text" id="c_api_base_url" placeholder="http://192.168.1.x:11434/v1">
-<p class="hint">Optional override. Leave empty to use the selected provider default.</p>
+<p class="hint">For local LLM. Leave empty for OpenRouter.</p>
 <div class="sep"></div>
 <label>NATS Host</label>
 <input type="text" id="c_nats_host">
@@ -808,7 +801,7 @@ document.getElementById('platform_qq').className='platform-group'+(platform==='q
 }
 function loadConfig(){
 fetch('/api/config').then(r=>r.json()).then(d=>{
-var f=['wifi_ssid','wifi_pass','api_key','llm_provider','model','device_name','api_base_url',
+var f=['wifi_ssid','wifi_pass','api_key','model','device_name','api_base_url',
 'nats_host','nats_port','message_platform','telegram_token','telegram_chat_id',
 'telegram_cooldown','qq_app_id','qq_app_secret','qq_cooldown','timezone'];
 f.forEach(k=>{var el=document.getElementById('c_'+k);if(el)el.value=d[k]||''});
@@ -816,7 +809,7 @@ togglePlatformFields();
 }).catch(e=>toast('Failed to load config',false));
 }
 function saveConfig(){
-var f=['wifi_ssid','wifi_pass','api_key','llm_provider','model','device_name','api_base_url',
+var f=['wifi_ssid','wifi_pass','api_key','model','device_name','api_base_url',
 'nats_host','nats_port','message_platform','telegram_token','telegram_chat_id',
 'telegram_cooldown','qq_app_id','qq_app_secret','qq_cooldown','timezone'];
 var d={};f.forEach(k=>{d[k]=document.getElementById('c_'+k).value});
