@@ -1,5 +1,7 @@
 .pio
+.vscode
 data/config.json
+data/config.json.minimax
 data/config.json.openrouter
 data/config.json.ollama
 tmp/
