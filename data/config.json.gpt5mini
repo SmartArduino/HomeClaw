@@ -1,6 +1,6 @@
 {
-  "wifi_ssid": "doit-6",
-  "wifi_pass": "doit3305",
+  "wifi_ssid": "",
+  "wifi_pass": "",
   "api_key":"50998-8319A2F0E73EFF9A867569423C8E18B0DF1BA313",
   "model": "GPT-5",
   "device_name": "wireclaw-01",

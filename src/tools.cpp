@@ -125,6 +125,8 @@ static void tool_led_set(const char *args, char *result, int result_len) {
     g = constrain(g, 0, 255);
     b = constrain(b, 0, 255);
 
+    Serial.printf("[Tool] led_set requested RGB(%d, %d, %d)\n", r, g, b);
+
     led((uint8_t)r, (uint8_t)g, (uint8_t)b);
     g_led_user = true;
     Device *rgb = deviceFind("rgb_led");

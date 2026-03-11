@@ -1,7 +1,7 @@
 {
-  "wifi_ssid": "REDMI K80",
-  "wifi_pass": "qwer184747",
-  "api_key":"sk-cp-yipCduEuaQq3vCRoF0e-JPMNndZdsZee3h8w0mJSvVABw6lN6bfLWH-LiqAo48lV9sxTbPrpvcro3yU-U2_Twgad0qnH9DuFjirqEBdlqbg9wHVRvZTVsaA",
+  "wifi_ssid": "",
+  "wifi_pass": "",
+  "api_key":"",
   "model": "MiniMax-M2.5",
   "device_name": "wireclaw-01",
   "api_base_url": "https://api.minimaxi.com/v1/chat/completions",
@@ -11,8 +11,8 @@
   "telegram_token": "",
   "telegram_chat_id": "",
   "telegram_cooldown": "15",
-  "qq_app_id": "1903272956",
-  "qq_app_secret": "6FOYis2CMWhs3EPamyAMYkxANan0DRft",
+  "qq_app_id": "",
+  "qq_app_secret": "",
   "qq_cooldown": "15",
   "timezone": "UTC0"
 }

@@ -1,4 +1,6 @@
-# WireClaw
+# HomeClaw
+
+首先致谢的开源项目：https://github.com/M64GitHub/WireClaw ,本项目基于WireClaw进行修改，增加了对QQ-Bot的支持,目前仅支持ESP32C6芯片，后续会支持更多芯片。
 
 An AI agent that lives on a $5 microcontroller and controls real hardware.
 
