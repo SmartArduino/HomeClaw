@@ -4,5 +4,10 @@ data/config.json
 data/config.json.minimax
 data/config.json.openrouter
 data/config.json.ollama
+src/src_code_guide.md
+release
+build_all.sh
+build_and_merge.sh
+AGENTS.md
 tmp/
 

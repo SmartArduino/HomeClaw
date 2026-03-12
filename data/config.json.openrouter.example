@@ -2,6 +2,7 @@
   "wifi_ssid": "A2",
   "wifi_pass": "W;2",
   "api_key": "sk-ab081",
+  "llm_provider": "openrouter",
   "model": "google/gemini-2.5-flash",
   "device_name": "wireclaw-01",
   "max_tokens": 2048,

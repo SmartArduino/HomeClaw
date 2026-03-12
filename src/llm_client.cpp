@@ -11,6 +11,7 @@
 static const char *DEFAULT_HOST = "openrouter.ai";
 static const int   DEFAULT_PORT = 443;
 static const char *DEFAULT_PATH = "/api/v1/chat/completions";
+static const char *SWOOLE_COMPATIBLE_PATH = "/v1/chat/compatible";
 
 /* ---- JSON helpers ---- */
 
@@ -92,6 +93,57 @@ static int json_find_int(const char *json, int json_len,
     if (after_key >= end) return default_val;
 
     return atoi(after_key);
+}
+
+static const char *json_skip_value(const char *p, const char *end);
+
+static bool json_has_key(const char *json, int json_len, const char *key) {
+    char pattern[128];
+    int plen = snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    if (plen < 0 || plen >= (int)sizeof(pattern)) return false;
+    return memmem(json, json_len, pattern, plen) != nullptr;
+}
+
+static const char *json_find_object(const char *json, int json_len,
+                                    const char *key, int *out_len) {
+    char pattern[128];
+    int plen = snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    if (plen < 0 || plen >= (int)sizeof(pattern)) return nullptr;
+
+    const char *end = json + json_len;
+    const char *p = json;
+
+    while (p < end - plen) {
+        const char *found = (const char *)memmem(p, end - p, pattern, plen);
+        if (!found) return nullptr;
+
+        const char *after_key = found + plen;
+        while (after_key < end && (*after_key == ' ' || *after_key == ':'))
+            after_key++;
+
+        if (after_key >= end || *after_key != '{') {
+            p = after_key;
+            continue;
+        }
+
+        const char *obj_end = json_skip_value(after_key, end);
+        if (!obj_end) return nullptr;
+
+        *out_len = obj_end - after_key;
+        return after_key;
+    }
+
+    return nullptr;
+}
+
+static bool path_equals(const char *path, const char *expected) {
+    if (!path || !expected) return false;
+    while (*path && *expected) {
+        if (*path != *expected) return false;
+        path++;
+        expected++;
+    }
+    return (*path == '\0' || *path == '?') && *expected == '\0';
 }
 
 static int hex_val(char c) {
@@ -180,21 +232,36 @@ static const char *json_skip_value(const char *p, const char *end) {
     }
 
     if (*p == '{' || *p == '[') {
-        char open = *p;
-        char close = (open == '{') ? '}' : ']';
-        int depth = 1;
+        char stack[16];
+        int top = 0;
+
+        stack[top++] = (*p == '{') ? '}' : ']';
         p++;
-        while (p < end && depth > 0) {
+
+        while (p < end && top > 0) {
             if (*p == '"') {
                 p = json_skip_value(p, end);
                 if (!p) return nullptr;
                 continue;
             }
-            if (*p == open) depth++;
-            else if (*p == close) depth--;
+
+            if (*p == '{' || *p == '[') {
+                if (top >= (int)sizeof(stack)) return nullptr;
+                stack[top++] = (*p == '{') ? '}' : ']';
+                p++;
+                continue;
+            }
+
+            if (*p == stack[top - 1]) {
+                top--;
+                p++;
+                continue;
+            }
+
             p++;
         }
-        return (depth == 0) ? p : nullptr;
+
+        return (top == 0) ? p : nullptr;
     }
 
     /* Number, bool, null - skip to next delimiter */
@@ -209,14 +276,25 @@ LlmClient::LlmClient()
     : m_client(nullptr), m_api_key(nullptr), m_model(nullptr),
       m_port(443), m_use_tls(true), m_last_http_status(0) {
     m_error[0] = '\0';
+    strncpy(m_provider, "openrouter", sizeof(m_provider));
+    m_provider[sizeof(m_provider) - 1] = '\0';
     m_host[0] = '\0';
     m_path[0] = '\0';
 }
 
-void LlmClient::begin(const char *api_key, const char *model, const char *base_url) {
+void LlmClient::begin(const char *api_key, const char *model, const char *base_url,
+                      const char *provider) {
     m_api_key = api_key;
     m_model = model;
+    if (provider && provider[0]) {
+        strncpy(m_provider, provider, sizeof(m_provider) - 1);
+        m_provider[sizeof(m_provider) - 1] = '\0';
+    } else {
+        strncpy(m_provider, "openrouter", sizeof(m_provider) - 1);
+        m_provider[sizeof(m_provider) - 1] = '\0';
+    }
     Serial.printf("LLM: model: %s\n",m_model);
+    Serial.printf("LLM: provider: %s\n", m_provider);
 
     /* Parse base_url or use defaults */
     if (base_url && base_url[0]) {
@@ -261,13 +339,30 @@ void LlmClient::begin(const char *api_key, const char *model, const char *base_u
             m_host[sizeof(m_host) - 1] = '\0';
             strncpy(m_path, "/", sizeof(m_path));
         }
+        if (strcmp(m_provider, "swoole") == 0 &&
+            path_equals(m_path, "/v1/chat/completions")) {
+            strncpy(m_path, SWOOLE_COMPATIBLE_PATH, sizeof(m_path) - 1);
+            m_path[sizeof(m_path) - 1] = '\0';
+        }
+
         Serial.printf("LLM: %s://%s:%d%s\n",
                       m_use_tls ? "https" : "http", m_host, m_port, m_path);
     } else {
-        m_use_tls = true;
-        strncpy(m_host, DEFAULT_HOST, sizeof(m_host));
-        m_port = DEFAULT_PORT;
-        strncpy(m_path, DEFAULT_PATH, sizeof(m_path));
+        if (strcmp(m_provider, "swoole") == 0) {
+            m_use_tls = true;
+            strncpy(m_host, "chat.swoole.com", sizeof(m_host) - 1);
+            m_host[sizeof(m_host) - 1] = '\0';
+            m_port = 443;
+            strncpy(m_path, SWOOLE_COMPATIBLE_PATH, sizeof(m_path) - 1);
+            m_path[sizeof(m_path) - 1] = '\0';
+        } else {
+            m_use_tls = true;
+            strncpy(m_host, DEFAULT_HOST, sizeof(m_host) - 1);
+            m_host[sizeof(m_host) - 1] = '\0';
+            m_port = DEFAULT_PORT;
+            strncpy(m_path, DEFAULT_PATH, sizeof(m_path) - 1);
+            m_path[sizeof(m_path) - 1] = '\0';
+        }
     }
 
     if (m_use_tls) {
@@ -311,7 +406,7 @@ int LlmClient::buildRequest(char *buf, int buf_len,
                 w += esc;
                 w += snprintf(buf + w, buf_len - w, "\"");
             } else {
-                w += snprintf(buf + w, buf_len - w, ",\"content\":null");
+                w += snprintf(buf + w, buf_len - w, ",\"content\":\"\"");
             }
             if (w >= buf_len) return -1;
 
@@ -361,8 +456,18 @@ int LlmClient::buildRequest(char *buf, int buf_len,
         if (w >= buf_len) return -1;
     }
 
-    w += snprintf(buf + w, buf_len - w,
-        ",\"max_tokens\":2048,\"temperature\":0.7}");
+    if (strcmp(m_provider, "swoole") == 0) {
+        w += snprintf(buf + w, buf_len - w, ",\"raw\":1");
+        if (w >= buf_len) return -1;
+    }
+
+    if (strcmp(m_provider, "swoole") == 0) {
+        w += snprintf(buf + w, buf_len - w,
+            ",\"stream\":false,\"temperature\":0.7}");
+    } else {
+        w += snprintf(buf + w, buf_len - w,
+            ",\"stream\":false,\"max_tokens\":2048,\"temperature\":0.7}");
+    }
 
     if (w >= buf_len) return -1;
     return w;
@@ -372,13 +477,22 @@ int LlmClient::parseToolCalls(const char *body, int body_len, LlmResult *result)
     result->tool_call_count = 0;
     result->tool_calls_json[0] = '\0';
 
+    int msg_len = 0;
+    const char *scope = body;
+    int scope_len = body_len;
+    const char *msg_obj = json_find_object(body, body_len, "message", &msg_len);
+    if (msg_obj && msg_len > 0) {
+        scope = msg_obj;
+        scope_len = msg_len;
+    }
+
     /* Find "tool_calls" key */
     const char *tc_key = "\"tool_calls\"";
-    const char *found = (const char *)memmem(body, body_len, tc_key, strlen(tc_key));
+    const char *found = (const char *)memmem(scope, scope_len, tc_key, strlen(tc_key));
     if (!found) return 0;
 
     /* Skip to the array start '[' */
-    const char *end = body + body_len;
+    const char *end = scope + scope_len;
     const char *p = found + strlen(tc_key);
     while (p < end && *p != '[') p++;
     if (p >= end) return 0;
@@ -467,12 +581,38 @@ bool LlmClient::parseResponse(const char *body, int body_len, LlmResult *result)
     result->tool_call_count = 0;
     result->tool_calls_json[0] = '\0';
 
+    int provider_code = json_has_key(body, body_len, "code")
+                        ? json_find_int(body, body_len, "code", 0)
+                        : 0;
+    if (provider_code != 0) {
+        int elen = 0;
+        const char *errmsg = json_find_string(body, body_len, "message", &elen);
+        if (errmsg && elen > 0) {
+            int copy = elen < (int)sizeof(m_error) - 1 ? elen : (int)sizeof(m_error) - 1;
+            memcpy(m_error, errmsg, copy);
+            m_error[copy] = '\0';
+            json_unescape(m_error, copy);
+        } else {
+            snprintf(m_error, sizeof(m_error), "Provider error code %d", provider_code);
+        }
+        return false;
+    }
+
     /* Check for tool calls first */
     int tc_count = parseToolCalls(body, body_len, result);
 
+    int msg_len = 0;
+    const char *scope = body;
+    int scope_len = body_len;
+    const char *msg_obj = json_find_object(body, body_len, "message", &msg_len);
+    if (msg_obj && msg_len > 0) {
+        scope = msg_obj;
+        scope_len = msg_len;
+    }
+
     /* Extract "content" field */
     int clen = 0;
-    const char *content = json_find_string(body, body_len, "content", &clen);
+    const char *content = json_find_string(scope, scope_len, "content", &clen);
     if (content && clen > 0) {
         int copy_len = clen < LLM_MAX_RESPONSE_LEN - 1 ? clen : LLM_MAX_RESPONSE_LEN - 1;
         memcpy(result->content, content, copy_len);
@@ -598,6 +738,10 @@ bool LlmClient::chat(const LlmMessage *messages, int count,
 
     if (g_debug) Serial.printf("[LLM] Connected (%lums). Sending %d bytes...\n",
                                millis() - t0, req_len);
+    if (g_debug) {
+        Serial.printf("[LLM] Request body (%d bytes): %.*s\n",
+                      req_len, req_len, request_buf);
+    }
 
     m_client->printf("POST %s HTTP/1.1\r\n", m_path);
     m_client->printf("Host: %s\r\n", m_host);
@@ -625,6 +769,7 @@ bool LlmClient::chat(const LlmMessage *messages, int count,
 
     static char response_buf[LLM_MAX_RESPONSE_LEN + 2048];
     int body_len = readResponse(response_buf, sizeof(response_buf));
+    if(g_debug) Serial.printf("[LLM] readResponse %s\n", response_buf);
     result->http_status = m_last_http_status;
 
     m_client->stop();

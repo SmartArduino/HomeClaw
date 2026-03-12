@@ -65,7 +65,8 @@ class LlmClient {
 public:
     LlmClient();
 
-    void begin(const char *api_key, const char *model, const char *base_url = nullptr);
+    void begin(const char *api_key, const char *model, const char *base_url = nullptr,
+               const char *provider = nullptr);
 
     /**
      * Send a chat completion request, optionally with tools.
@@ -87,6 +88,7 @@ private:
     Client          *m_client;          /* points to active one */
     const char *m_api_key;
     const char *m_model;
+    char m_provider[16];
     char m_host[64];
     int  m_port;
     char m_path[64];

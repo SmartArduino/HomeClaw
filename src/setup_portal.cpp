@@ -49,9 +49,14 @@ button:hover{background:#00b894}
 <label>WiFi Password *</label>
 <input type="password" name="wifi_pass" required>
 <div class="sep"></div>
-<label>OpenRouter API Key</label>
+<label>API Key</label>
 <input type="text" name="api_key" placeholder="sk-or-v1-...">
-<p class="opt">Required unless using local LLM</p>
+<p class="opt">Required for cloud providers unless using local LLM</p>
+<label>LLM Provider</label>
+<select name="llm_provider">
+<option value="openrouter">OpenRouter</option>
+<option value="swoole">Swoole</option>
+</select>
 <label>Model</label>
 <input type="text" name="model" value="google/gemini-2.5-flash">
 <label>Device Name</label>
@@ -59,7 +64,7 @@ button:hover{background:#00b894}
 <div class="sep"></div>
 <label>API Base URL</label>
 <input type="text" name="api_base_url" placeholder="http://192.168.1.x:11434/v1">
-<p class="opt">For local LLM (Ollama, etc.)</p>
+<p class="opt">Optional override. Leave empty to use the selected provider default.</p>
 <div class="sep"></div>
 <label>NATS Host</label>
 <input type="text" name="nats_host" placeholder="192.168.1.x">
@@ -200,6 +205,10 @@ static bool saveConfig(const char *body) {
 
     formGetField(body, "api_key", val, sizeof(val));
     f.print("  \"api_key\": "); writeJsonEscaped(f, val); f.print(",\n");
+
+    formGetField(body, "llm_provider", val, sizeof(val));
+    if (val[0] == '\0') strncpy(val, "openrouter", sizeof(val));
+    f.print("  \"llm_provider\": "); writeJsonEscaped(f, val); f.print(",\n");
 
     formGetField(body, "model", val, sizeof(val));
     if (val[0] == '\0') strncpy(val, "google/gemini-2.5-flash", sizeof(val));
